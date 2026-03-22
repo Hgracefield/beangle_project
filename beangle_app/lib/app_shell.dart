@@ -126,6 +126,7 @@ class AppPageScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFFeeeeee),
       appBar: AppBar(
         title: Text(title),
         actions: [GlobalRouteMenu(currentRoute: currentRoute)],
