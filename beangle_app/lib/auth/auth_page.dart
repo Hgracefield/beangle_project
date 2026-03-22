@@ -11,6 +11,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:get_storage/get_storage.dart';
 
 
 class AuthPage extends StatefulWidget {
@@ -24,6 +25,7 @@ class _AuthPageState extends State<AuthPage> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final GoogleAuthService _googleAuthService = GoogleAuthService();
+  final GetStorage _storage = GetStorage();
   StreamSubscription? _googleAuthSub;
 
   @override
@@ -108,9 +110,17 @@ class _AuthPageState extends State<AuthPage> {
         final body = jsonDecode(response.body);
         final success = body is Map<String, dynamic> && body["success"] == true;
         if (success) {
+          final userId = body["user_id"];
+          if (userId != null) {
+            await _storage.write("user_id", userId);
+          }
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text("로그인 성공!")),
           );
+          if (!mounted) {
+            return;
+          }
+          Get.offNamed(AppRoutes.test);
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text("이메일 또는 비밀번호가 올바르지 않아요.")),
@@ -167,10 +177,18 @@ class _AuthPageState extends State<AuthPage> {
         final body = jsonDecode(response.body);
         final success = body is Map<String, dynamic> && body["success"] == true;
         if (success) {
+          final userId = body["user_id"];
+          if (userId != null) {
+            await _storage.write("user_id", userId);
+          }
           final message = isSignUp ? "구글 가입 완료!" : "구글 로그인 완료!";
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(message)),
           );
+          if (!mounted) {
+            return;
+          }
+          Get.offNamed(AppRoutes.test);
           return;
         }
       }

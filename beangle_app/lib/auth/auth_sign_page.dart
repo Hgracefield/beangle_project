@@ -9,6 +9,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:get_storage/get_storage.dart';
 
 class AuthSignPage extends StatefulWidget {
   const AuthSignPage({super.key});
@@ -23,6 +24,7 @@ class _AuthSignPageState extends State<AuthSignPage> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final GoogleAuthService _googleAuthService = GoogleAuthService();
+  final GetStorage _storage = GetStorage();
   StreamSubscription? _googleAuthSub;
 
   @override
@@ -175,9 +177,17 @@ class _AuthSignPageState extends State<AuthSignPage> {
         final body = jsonDecode(response.body);
         final success = body is Map<String, dynamic> && body["success"] == true;
         if (success) {
+          final userId = body["user_id"];
+          if (userId != null) {
+            await _storage.write("user_id", userId);
+          }
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text("구글 계정으로 가입됐어요.")),
           );
+          if (!mounted) {
+            return;
+          }
+          Navigator.of(context).pushReplacementNamed(AppRoutes.test);
           return;
         }
       }
