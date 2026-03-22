@@ -1,3 +1,4 @@
+import 'package:beangle_app/settings/local_notification.dart';
 import 'package:flutter/material.dart';
 import 'package:beangle_app/app_shell.dart';
 import 'package:beangle_app/auth/auth_find_info.dart';
@@ -9,7 +10,9 @@ import 'package:beangle_app/user/map_for_user.dart';
 import 'package:beangle_app/worker/map_for_worker.dart';
 import 'package:get/get.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await NotificationService().init();
   runApp(const MyApp());
 }
 
