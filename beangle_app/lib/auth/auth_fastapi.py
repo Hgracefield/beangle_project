@@ -28,6 +28,11 @@ class AuthFastAPI(BaseModel):
     phone: str
     name: str
 
+class GoogleAuthFastAPI(BaseModel):
+    email: str
+    name: str | None = None
+    idToken: str
+
 @app.post("/signup")
 def signup(req: AuthFastAPI):
 
@@ -52,3 +57,21 @@ def login(req: AuthFastAPI):
         return {"success": True}
     else:
         return {"success": False}
+
+@app.post("/google_login")
+def google_login(req: GoogleAuthFastAPI):
+    # TODO: Verify req.idToken with Google before trusting it.
+    query = "SELECT * FROM users WHERE user_email=%s"
+    cursor.execute(query, (req.email,))
+    user = cursor.fetchone()
+
+    if user:
+        return {"success": True, "created": False}
+
+    insert_query = """
+    INSERT INTO users (user_name, user_email, user_password, user_phone)
+    VALUES (%s, %s, %s, %s)
+    """
+    cursor.execute(insert_query, (req.name or "", req.email, "", ""))
+    db.commit()
+    return {"success": True, "created": True}

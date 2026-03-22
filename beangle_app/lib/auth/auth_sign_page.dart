@@ -1,9 +1,14 @@
 import 'package:beangle_app/auth/custom_textfield.dart';
+import 'package:beangle_app/auth/google_auth_button.dart';
+import 'package:beangle_app/auth/google_auth_service.dart';
 import 'package:beangle_app/auth/primaryButton.dart';
 import 'package:flutter/material.dart';
 import 'package:beangle_app/app_shell.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:async';
+import 'package:flutter/foundation.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 class AuthSignPage extends StatefulWidget {
   const AuthSignPage({super.key});
@@ -17,6 +22,37 @@ class _AuthSignPageState extends State<AuthSignPage> {
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final GoogleAuthService _googleAuthService = GoogleAuthService();
+  StreamSubscription? _googleAuthSub;
+
+  @override
+  void initState() {
+    super.initState();
+    if (kIsWeb) {
+      _googleAuthService.initialize().then((_) {
+        _googleAuthSub = _googleAuthService.authenticationEvents.listen(
+          (event) async {
+            if (!mounted) {
+              return;
+            }
+            if (event is! GoogleSignInAuthenticationEventSignIn) {
+              return;
+            }
+            final account = event.user;
+            await _sendGoogleAuthToServer(account);
+          },
+          onError: (_) {
+            if (!mounted) {
+              return;
+            }
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text("구글 가입에 실패했어요.")),
+            );
+          },
+        );
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -24,6 +60,7 @@ class _AuthSignPageState extends State<AuthSignPage> {
     _phoneController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _googleAuthSub?.cancel();
     super.dispose();
   }
 
@@ -72,7 +109,7 @@ class _AuthSignPageState extends State<AuthSignPage> {
 
     try {
       final response = await http.post(
-        Uri.parse("http://127.0.0.1:8000/signup"),
+        Uri.parse("http://localhost:8000/signup"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode(payload),
       );
@@ -101,6 +138,84 @@ class _AuthSignPageState extends State<AuthSignPage> {
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("서버에 연결할 수 없어요.")),
+      );
+    }
+  }
+
+  Future<void> _sendGoogleAuthToServer(GoogleSignInAccount account) async {
+    final idToken = await _googleAuthService.getIdToken(account);
+    if (!mounted) {
+      return;
+    }
+    if (idToken == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("구글 토큰을 가져올 수 없어요.")),
+      );
+      return;
+    }
+
+    final payload = {
+      "email": account.email,
+      "name": account.displayName ?? "",
+      "idToken": idToken,
+    };
+
+    try {
+      final response = await http.post(
+        Uri.parse("http://localhost:8000/google_login"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode(payload),
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body);
+        final success = body is Map<String, dynamic> && body["success"] == true;
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("구글 계정으로 가입됐어요.")),
+          );
+          return;
+        }
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("구글 가입에 실패했어요.")),
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("서버에 연결할 수 없어요.")),
+      );
+    }
+  }
+
+  Future<void> _onGoogleSignUpPressed() async {
+    try {
+      final account = await _googleAuthService.signIn();
+      if (!mounted) {
+        return;
+      }
+
+      if (account == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("가입이 취소됐어요.")),
+        );
+        return;
+      }
+
+      await _sendGoogleAuthToServer(account);
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("구글 가입에 실패했어요.")),
       );
     }
   }
@@ -169,10 +284,11 @@ class _AuthSignPageState extends State<AuthSignPage> {
 
               SizedBox(height: 16),
 
-              OutlinedButton.icon(
-                onPressed: () {},
-                icon: Icon(Icons.login),
-                label: Text("Google로 가입"),
+              SizedBox(height: 16),
+
+              GoogleAuthButton(
+                onPressed: _onGoogleSignUpPressed,
+                label: "Google로 가입",
               ),
 
               SizedBox(height: 16),

@@ -1,11 +1,17 @@
 import 'package:beangle_app/auth/auth_sign_page.dart';
 import 'package:beangle_app/auth/custom_textfield.dart';
+import 'package:beangle_app/auth/google_auth_button.dart';
+import 'package:beangle_app/auth/google_auth_service.dart';
 import 'package:beangle_app/auth/primaryButton.dart';
 import 'package:flutter/material.dart';
 import 'package:beangle_app/app_shell.dart';
 import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:async';
+import 'package:flutter/foundation.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+
 
 class AuthPage extends StatefulWidget {
   const AuthPage({super.key});
@@ -17,11 +23,43 @@ class AuthPage extends StatefulWidget {
 class _AuthPageState extends State<AuthPage> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final GoogleAuthService _googleAuthService = GoogleAuthService();
+  StreamSubscription? _googleAuthSub;
+
+  @override
+  void initState() {
+    super.initState();
+    if (kIsWeb) {
+      _googleAuthService.initialize().then((_) {
+        _googleAuthSub = _googleAuthService.authenticationEvents.listen(
+          (event) async {
+            if (!mounted) {
+              return;
+            }
+            if (event is! GoogleSignInAuthenticationEventSignIn) {
+              return;
+            }
+            final account = event.user;
+            await _sendGoogleAuthToServer(account, isSignUp: false);
+          },
+          onError: (_) {
+            if (!mounted) {
+              return;
+            }
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text("구글 로그인에 실패했어요.")),
+            );
+          },
+        );
+      });
+    }
+  }
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _googleAuthSub?.cancel();
     super.dispose();
   }
 
@@ -93,6 +131,88 @@ class _AuthPageState extends State<AuthPage> {
     }
   }
 
+  Future<void> _sendGoogleAuthToServer(
+    GoogleSignInAccount account, {
+    required bool isSignUp,
+  }) async {
+    final idToken = await _googleAuthService.getIdToken(account);
+    if (!mounted) {
+      return;
+    }
+    if (idToken == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("구글 토큰을 가져올 수 없어요.")),
+      );
+      return;
+    }
+
+    final payload = {
+      "email": account.email,
+      "name": account.displayName ?? "",
+      "idToken": idToken,
+    };
+
+    try {
+      final response = await http.post(
+        Uri.parse("http://localhost:8000/google_login"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode(payload),
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body);
+        final success = body is Map<String, dynamic> && body["success"] == true;
+        if (success) {
+          final message = isSignUp ? "구글 가입 완료!" : "구글 로그인 완료!";
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(message)),
+          );
+          return;
+        }
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("구글 로그인에 실패했어요.")),
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("서버에 연결할 수 없어요.")),
+      );
+    }
+  }
+
+  Future<void> _onGoogleLoginPressed() async {
+    try {
+      final account = await _googleAuthService.signIn();
+      if (!mounted) {
+        return;
+      }
+
+      if (account == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("로그인이 취소됐어요.")),
+        );
+        return;
+      }
+
+      await _sendGoogleAuthToServer(account, isSignUp: false);
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("구글 로그인에 실패했어요.")),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return AppPageScaffold(
@@ -140,10 +260,9 @@ class _AuthPageState extends State<AuthPage> {
 
               SizedBox(height: 16),
 
-              OutlinedButton.icon(
-                onPressed: () {},
-                icon: Icon(Icons.login),
-                label: Text("Google로 로그인"),
+              GoogleAuthButton(
+                onPressed: _onGoogleLoginPressed,
+                label: "Google로 로그인",
               ),
 
               SizedBox(height: 16),
