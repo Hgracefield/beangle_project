@@ -5,7 +5,7 @@ import 'package:beangle_app/auth/auth_sign_page.dart';
 import 'package:beangle_app/dashboard/dashboard.dart';
 import 'package:beangle_app/reservation/reservation.dart';
 import 'package:beangle_app/user/map_for_user.dart';
-import 'package:beangle_app/worker/map_for_worker.dart';
+import 'package:beangle_app/worker/worker_home.dart';
 
 class AppRouteItem {
   const AppRouteItem({
@@ -62,7 +62,7 @@ class AppRoutes {
     AppRouteItem(
       routeName: workerMap,
       label: 'Worker Map',
-      builder: (_) => const MapForWorkerPage(),
+      builder: (_) => const WorkerHomePage(),
     ),
   ];
 
