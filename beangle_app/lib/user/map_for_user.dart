@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -23,6 +24,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   static const String _favoriteStorageKey = 'favorite_station_ids';
   static const String _themeStorageKey = 'user_map_dark_theme';
   static const String _reservationStorageKey = 'station_reservations';
+  static const String _userIdStorageKey = 'user_id';
 
   final MapController _mapController = MapController();
   final GetStorage _storage = GetStorage();
@@ -33,6 +35,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   Set<String> _favoriteStationIds = <String>{};
   Map<String, List<DateTime>> _reservedTimes = <String, List<DateTime>>{};
   String? _selectedStationId;
+  String? _userId;
 
   // UI 토글 상태.
   bool _isDarkTheme = false;
@@ -53,6 +56,12 @@ class _MapForUserPageState extends State<MapForUserPage> {
   String _discomfortIndex = '--';
   String _stationStatus = '실시간 대수 불러오는 중...';
   String _predictionStatus = '예측 변동량 불러오는 중...';
+  String _userInfoStatus = '로그인 정보 확인 중...';
+
+  String _userName = '';
+  String _userEmail = '';
+  String _userPhone = '';
+  bool _isUserInfoLoading = false;
 
   // 학습 모델이 생성한 시간대별 예측 자산 전체.
   Map<String, dynamic> _predictionData = const {};
@@ -107,6 +116,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
     // 첫 진입 시 로컬 상태, 예측 자산, 실시간 대여소, 위치/날씨를 순서대로 준비한다.
     _currentPosition = const latlong.LatLng(37.615, 126.917);
     _hydrateLocalState();
+    _loadUserProfile();
     _loadPredictionData();
     _loadStations();
     Future.delayed(const Duration(milliseconds: 100), _fitMarkersOnMap);
@@ -123,10 +133,20 @@ class _MapForUserPageState extends State<MapForUserPage> {
         .read<Map<dynamic, dynamic>>(_reservationStorageKey);
 
     _isDarkTheme = _storage.read<bool>(_themeStorageKey) ?? false;
+    _userId = _storage.read(_userIdStorageKey)?.toString();
     _favoriteStationIds = (favorites ?? <dynamic>[])
         .map((dynamic id) => id.toString())
         .toSet();
     _reservedTimes = _decodeReservedTimes(reservations);
+  }
+
+  String get _authApiBaseUrl {
+    if (kIsWeb ||
+        defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.macOS) {
+      return 'http://127.0.0.1:8000';
+    }
+    return 'http://10.0.2.2:8000';
   }
 
   Map<String, List<DateTime>> _decodeReservedTimes(Map<dynamic, dynamic>? raw) {
@@ -212,6 +232,66 @@ class _MapForUserPageState extends State<MapForUserPage> {
     });
 
     _reservedTimes = next;
+  }
+
+  Future<void> _loadUserProfile() async {
+    // 로그인 시 저장된 user_id로 사용자 정보를 읽어와 드로어 헤더에 표시한다.
+    final String? userId = _userId;
+    if (userId == null || userId.isEmpty) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _userInfoStatus = '로그인된 사용자 없음';
+      });
+      return;
+    }
+
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _isUserInfoLoading = true;
+      _userInfoStatus = '고객 정보 불러오는 중...';
+    });
+
+    try {
+      final Uri uri = Uri.parse('$_authApiBaseUrl/users/$userId');
+      final http.Response response = await http.get(uri);
+      if (response.statusCode != 200) {
+        throw Exception('사용자 조회 실패: ${response.statusCode}');
+      }
+
+      final Map<String, dynamic> decoded =
+          jsonDecode(response.body) as Map<String, dynamic>;
+      final bool success = decoded['success'] == true;
+      final Map<String, dynamic>? user =
+          decoded['user'] as Map<String, dynamic>?;
+
+      if (!success || user == null) {
+        throw Exception('사용자 정보 없음');
+      }
+
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _userName = user['name']?.toString() ?? '';
+        _userEmail = user['email']?.toString() ?? '';
+        _userPhone = user['phone']?.toString() ?? '';
+        _isUserInfoLoading = false;
+        _userInfoStatus = '고객 정보 연결 완료';
+      });
+    } catch (e) {
+      debugPrint('고객 정보 가져오기 실패: $e');
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isUserInfoLoading = false;
+        _userInfoStatus = '고객 정보를 불러올 수 없습니다';
+      });
+    }
   }
 
   Future<void> _getCurrentLocation() async {
@@ -1320,14 +1400,89 @@ class _MapForUserPageState extends State<MapForUserPage> {
             padding: EdgeInsets.zero,
             children: [
               DrawerHeader(
-                decoration: const BoxDecoration(color: Color(0xFF49992E)),
-                child: const Text(
-                  '메뉴',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [_cardAccent, _cardAccent.withValues(alpha: 0.82)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 52,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.18),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.person,
+                            color: Colors.white,
+                            size: 28,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _userName.isEmpty ? '게스트 사용자' : _userName,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                _userEmail.isEmpty
+                                    ? _userInfoStatus
+                                    : _userEmail,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.88),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: _isUserInfoLoading
+                              ? null
+                              : _loadUserProfile,
+                          icon: const Icon(Icons.refresh, color: Colors.white),
+                          tooltip: '고객 정보 새로고침',
+                        ),
+                      ],
+                    ),
+                    if (_userPhone.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        '연락처 $_userPhone',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.82),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    Text(
+                      _userInfoStatus,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.78),
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
                 ),
               ),
               ListTile(
