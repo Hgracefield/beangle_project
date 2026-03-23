@@ -14,16 +14,6 @@ class ReservationModel(BaseModel):
     time:str
     is_cancel: int
 
-# def connect():
-#   conn = pymysql.connect(
-#     host='127.0.0.1',
-#     port=3307,
-#     user='root',
-#     password='Qwer1234!',
-#     database='cycle-predict',
-#     charset='utf8'
-#   )
-#   return conn
 def connect():
     return pymysql.connect(
         host=config.DB_HOST,
