@@ -1,3 +1,4 @@
+import 'package:beangle_app/worker/view/worker_theme.dart';
 import 'package:flutter/material.dart';
 
 class WorkerChatPage extends StatelessWidget {
@@ -7,6 +8,8 @@ class WorkerChatPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: workerThemeColor,
+        foregroundColor: Colors.white,
         title: const Text('어드민 채팅'),
       ),
       body: const Center(
