@@ -85,5 +85,29 @@ def google_login(req: GoogleAuthFastAPI):
         return {"success": False, "error": str(e)}
 
 
+@app.get("/users/{user_id}")
+def get_user(user_id: int):
+    query = """
+    SELECT user_id, user_name, user_email, user_phone
+    FROM user
+    WHERE user_id=%s
+    """
+    cursor.execute(query, (user_id,))
+    user = cursor.fetchone()
+
+    if not user:
+        return {"success": False, "error": "user_not_found"}
+
+    return {
+        "success": True,
+        "user": {
+            "user_id": user[0],
+            "name": user[1] or "",
+            "email": user[2] or "",
+            "phone": user[3] or "",
+        },
+    }
+
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
