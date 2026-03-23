@@ -29,12 +29,12 @@ class _MapForUserPageState extends State<MapForUserPage> {
   late latlong.LatLng _currentPosition;
   List<Marker> _markers = [];
   Set<String> _favoriteStationIds = <String>{};
-  Map<String, Map<int, int>> _reservedCounts = <String, Map<int, int>>{};
+  Map<String, List<DateTime>> _reservedTimes = <String, List<DateTime>>{};
   String? _selectedStationId;
 
   bool _isDarkTheme = false;
-  bool _isWeatherExpanded = true;
-  bool _isControlPanelExpanded = true;
+  bool _isWeatherExpanded = false;
+  bool _isControlPanelExpanded = false;
   bool _isUsingCurrentWeather = true;
   bool _isWeatherLoading = false;
   bool _isStationLoading = false;
@@ -118,28 +118,43 @@ class _MapForUserPageState extends State<MapForUserPage> {
     _favoriteStationIds = (favorites ?? <dynamic>[])
         .map((dynamic id) => id.toString())
         .toSet();
-    _reservedCounts = _decodeReservedCounts(reservations);
+    _reservedTimes = _decodeReservedTimes(reservations);
   }
 
-  Map<String, Map<int, int>> _decodeReservedCounts(Map<dynamic, dynamic>? raw) {
-    final Map<String, Map<int, int>> decoded = <String, Map<int, int>>{};
+  Map<String, List<DateTime>> _decodeReservedTimes(Map<dynamic, dynamic>? raw) {
+    final Map<String, List<DateTime>> decoded = <String, List<DateTime>>{};
     if (raw == null) {
       return decoded;
     }
 
-    raw.forEach((dynamic stationId, dynamic offsetMap) {
-      if (offsetMap is! Map) {
+    raw.forEach((dynamic stationId, dynamic value) {
+      final List<DateTime> stationReservations = <DateTime>[];
+
+      if (value is List) {
+        for (final dynamic item in value) {
+          final DateTime? parsed = DateTime.tryParse(item.toString());
+          if (parsed != null && parsed.isAfter(DateTime.now())) {
+            stationReservations.add(parsed);
+          }
+        }
+      } else if (value is Map) {
+        value.forEach((dynamic hour, dynamic count) {
+          final int? parsedHour = int.tryParse(hour.toString());
+          final int? parsedCount = int.tryParse(count.toString());
+          if (parsedHour == null || parsedCount == null || parsedCount <= 0) {
+            return;
+          }
+          for (int i = 0; i < parsedCount; i++) {
+            stationReservations.add(
+              DateTime.now().add(Duration(hours: parsedHour)),
+            );
+          }
+        });
+      } else {
         return;
       }
-      final Map<int, int> stationReservations = <int, int>{};
-      offsetMap.forEach((dynamic hour, dynamic count) {
-        final int? parsedHour = int.tryParse(hour.toString());
-        final int? parsedCount = int.tryParse(count.toString());
-        if (parsedHour == null || parsedCount == null || parsedCount <= 0) {
-          return;
-        }
-        stationReservations[parsedHour] = parsedCount;
-      });
+
+      stationReservations.sort();
       if (stationReservations.isNotEmpty) {
         decoded[stationId.toString()] = stationReservations;
       }
@@ -157,19 +172,35 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   void _persistReservations() {
-    final Map<String, Map<String, int>> encoded = <String, Map<String, int>>{};
-    _reservedCounts.forEach((String stationId, Map<int, int> offsets) {
-      final Map<String, int> filtered = <String, int>{};
-      offsets.forEach((int hour, int count) {
-        if (count > 0) {
-          filtered['$hour'] = count;
-        }
-      });
+    _pruneExpiredReservations();
+    final Map<String, List<String>> encoded = <String, List<String>>{};
+    _reservedTimes.forEach((String stationId, List<DateTime> times) {
+      final List<String> filtered =
+          times
+              .where((DateTime time) => time.isAfter(DateTime.now()))
+              .map((DateTime time) => time.toIso8601String())
+              .toList()
+            ..sort();
       if (filtered.isNotEmpty) {
         encoded[stationId] = filtered;
       }
     });
     _storage.write(_reservationStorageKey, encoded);
+  }
+
+  void _pruneExpiredReservations() {
+    final DateTime now = DateTime.now();
+    final Map<String, List<DateTime>> next = <String, List<DateTime>>{};
+
+    _reservedTimes.forEach((String stationId, List<DateTime> times) {
+      final List<DateTime> filtered =
+          times.where((DateTime time) => time.isAfter(now)).toList()..sort();
+      if (filtered.isNotEmpty) {
+        next[stationId] = filtered;
+      }
+    });
+
+    _reservedTimes = next;
   }
 
   Future<void> _getCurrentLocation() async {
@@ -659,15 +690,15 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   int _cumulativeReservedCount(String stationId, int hour) {
-    final Map<int, int> stationReservations =
-        _reservedCounts[stationId] ?? <int, int>{};
-    int total = 0;
-    stationReservations.forEach((int offset, int count) {
-      if (offset <= hour) {
-        total += count;
-      }
-    });
-    return total;
+    _pruneExpiredReservations();
+    final List<DateTime> stationReservations =
+        _reservedTimes[stationId] ?? <DateTime>[];
+    final DateTime now = DateTime.now();
+    final DateTime targetTime = now.add(Duration(hours: hour));
+    return stationReservations.where((DateTime reservationTime) {
+      return reservationTime.isAfter(now) &&
+          !reservationTime.isAfter(targetTime);
+    }).length;
   }
 
   void _toggleFavorite(String stationId) {
@@ -723,6 +754,29 @@ class _MapForUserPageState extends State<MapForUserPage> {
       return;
     }
 
+    final DateTime targetReservationTime = DateTime.now().add(
+      Duration(hours: _selectedForecastHour),
+    );
+    final DateTime normalizedTargetReservationTime = DateTime(
+      targetReservationTime.year,
+      targetReservationTime.month,
+      targetReservationTime.day,
+      targetReservationTime.hour,
+      targetReservationTime.minute,
+    );
+
+    final bool alreadyReserved = (_reservedTimes[stationId] ?? <DateTime>[])
+        .any(
+          (DateTime value) =>
+              value.isAtSameMomentAs(normalizedTargetReservationTime),
+        );
+    if (alreadyReserved) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('같은 스테이션은 같은 예약 시각에 1대만 예약할 수 있습니다.')),
+      );
+      return;
+    }
+
     final int predicted = _calculatePredictedAvailability(stationId, station);
     if (predicted <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -732,12 +786,12 @@ class _MapForUserPageState extends State<MapForUserPage> {
     }
 
     setState(() {
-      final Map<int, int> stationReservations = _reservedCounts.putIfAbsent(
+      final List<DateTime> stationReservations = _reservedTimes.putIfAbsent(
         stationId,
-        () => <int, int>{},
+        () => <DateTime>[],
       );
-      stationReservations[_selectedForecastHour] =
-          (stationReservations[_selectedForecastHour] ?? 0) + 1;
+      stationReservations.add(normalizedTargetReservationTime);
+      stationReservations.sort();
     });
     _persistReservations();
     _rebuildMarkers();
@@ -745,30 +799,182 @@ class _MapForUserPageState extends State<MapForUserPage> {
     final String stationName = station['name'] as String;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('$stationName 예약 완료: $_selectedForecastHour시간 후 1대'),
+        content: Text(
+          '$stationName 예약 완료: ${_formatDateTime(normalizedTargetReservationTime)}',
+        ),
       ),
     );
   }
 
-  void _clearReservation(String stationId, int hour) {
-    final Map<int, int>? stationReservations = _reservedCounts[stationId];
+  void _clearReservation(String stationId, DateTime targetTime) {
+    final List<DateTime>? stationReservations = _reservedTimes[stationId];
     if (stationReservations == null) {
       return;
     }
 
     setState(() {
-      final int next = (stationReservations[hour] ?? 0) - 1;
-      if (next > 0) {
-        stationReservations[hour] = next;
-      } else {
-        stationReservations.remove(hour);
-      }
+      stationReservations.removeWhere(
+        (DateTime value) => value.isAtSameMomentAs(targetTime),
+      );
       if (stationReservations.isEmpty) {
-        _reservedCounts.remove(stationId);
+        _reservedTimes.remove(stationId);
       }
     });
     _persistReservations();
     _rebuildMarkers();
+  }
+
+  void _clearReservationsUpToHour(String stationId, int hour) {
+    final List<DateTime>? stationReservations = _reservedTimes[stationId];
+    if (stationReservations == null || stationReservations.isEmpty) {
+      return;
+    }
+
+    final DateTime now = DateTime.now();
+    final DateTime targetTime = now.add(Duration(hours: hour));
+
+    final List<DateTime> matchingReservations =
+        stationReservations
+            .where(
+              (DateTime value) =>
+                  value.isAfter(now) && !value.isAfter(targetTime),
+            )
+            .toList()
+          ..sort();
+
+    if (matchingReservations.isEmpty) {
+      return;
+    }
+
+    _clearReservation(stationId, matchingReservations.first);
+  }
+
+  List<_ReservationListItem> _buildReservationItems() {
+    _pruneExpiredReservations();
+    final List<_ReservationListItem> items = <_ReservationListItem>[];
+
+    _reservedTimes.forEach((String stationId, List<DateTime> times) {
+      final Map<String, dynamic>? station = _stations[stationId];
+      final String stationName = station?['name'] as String? ?? stationId;
+
+      for (final DateTime targetTime in times) {
+        final DateTime now = DateTime.now();
+        final Duration remaining = targetTime.difference(now);
+        final String scheduleLabel = remaining.isNegative
+            ? '지난 예약'
+            : '${remaining.inHours}시간 ${remaining.inMinutes.remainder(60)}분 후';
+        items.add(
+          _ReservationListItem(
+            stationId: stationId,
+            stationName: stationName,
+            targetTime: targetTime,
+            scheduleLabel: scheduleLabel,
+          ),
+        );
+      }
+    });
+
+    items.sort((_ReservationListItem a, _ReservationListItem b) {
+      return a.targetTime.compareTo(b.targetTime);
+    });
+
+    return items;
+  }
+
+  void _showReservationList() {
+    final List<_ReservationListItem> reservations = _buildReservationItems();
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: _panelColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.event_note, color: _cardAccent),
+                    const SizedBox(width: 8),
+                    Text(
+                      '예약 목록',
+                      style: TextStyle(
+                        color: _primaryTextColor,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                if (reservations.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      '저장된 예약이 없습니다.',
+                      style: TextStyle(color: _secondaryTextColor),
+                    ),
+                  )
+                else
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: reservations.length,
+                      separatorBuilder: (_, _) => Divider(
+                        color: _secondaryTextColor.withValues(alpha: 0.25),
+                      ),
+                      itemBuilder: (BuildContext context, int index) {
+                        final _ReservationListItem item = reservations[index];
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: _cardAccent.withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            alignment: Alignment.center,
+                            child: Icon(Icons.pedal_bike, color: _cardAccent),
+                          ),
+                          title: Text(
+                            item.stationName,
+                            style: TextStyle(
+                              color: _primaryTextColor,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          subtitle: Text(
+                            '${_formatDateTime(item.targetTime)} · ${item.scheduleLabel}',
+                            style: TextStyle(color: _secondaryTextColor),
+                          ),
+                          trailing: IconButton(
+                            tooltip: '예약 취소',
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                              _clearReservation(
+                                item.stationId,
+                                item.targetTime,
+                              );
+                            },
+                            icon: Icon(Icons.close, color: _secondaryTextColor),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _showStationDialog(String id, Map<String, dynamic> data) {
@@ -783,8 +989,10 @@ class _MapForUserPageState extends State<MapForUserPage> {
     final DateTime target =
         forecastSummary.targetTime ??
         now.add(Duration(hours: _selectedForecastHour));
-    final int reservedCount =
-        (_reservedCounts[id]?[_selectedForecastHour] ?? 0);
+    final int reservedCount = _cumulativeReservedCount(
+      id,
+      _selectedForecastHour,
+    );
 
     setState(() {
       _selectedStationId = id;
@@ -926,7 +1134,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
                 TextButton(
                   onPressed: () {
                     Navigator.of(context).pop();
-                    _clearReservation(id, _selectedForecastHour);
+                    _clearReservationsUpToHour(id, _selectedForecastHour);
                   },
                   child: const Text('예약 취소'),
                 ),
@@ -994,6 +1202,14 @@ class _MapForUserPageState extends State<MapForUserPage> {
     _mapController.move(_currentPosition, 12.5);
   }
 
+  void _resetMapToInitialView() {
+    setState(() {
+      _selectedStationId = null;
+    });
+    _fitMarkersOnMap();
+    _rebuildMarkers();
+  }
+
   String _formatDateTime(DateTime value) {
     final String month = value.month.toString().padLeft(2, '0');
     final String day = value.day.toString().padLeft(2, '0');
@@ -1034,6 +1250,8 @@ class _MapForUserPageState extends State<MapForUserPage> {
     final String? selectedStationName = _selectedStationId == null
         ? null
         : _stations[_selectedStationId]?['name'] as String?;
+    final List<_ReservationListItem> reservationItems =
+        _buildReservationItems();
 
     return Theme(
       data: Theme.of(context).copyWith(
@@ -1046,11 +1264,13 @@ class _MapForUserPageState extends State<MapForUserPage> {
       ),
       child: Scaffold(
         appBar: AppBar(
+          centerTitle: true,
           backgroundColor: _cardAccent,
           foregroundColor: Colors.white,
-          title: const Text(
-            '은평 따릉이 예약',
-            style: TextStyle(fontWeight: FontWeight.bold),
+          title: Row(
+            children: [
+              const Text('빙글', style: TextStyle(fontWeight: FontWeight.bold)),
+            ],
           ),
           elevation: 0,
           actions: [
@@ -1085,6 +1305,36 @@ class _MapForUserPageState extends State<MapForUserPage> {
                     _persistTheme();
                   },
                 ),
+              ),
+              ListTile(
+                leading: Icon(Icons.event_note, color: _primaryTextColor),
+                title: Text(
+                  '예약 목록',
+                  style: TextStyle(color: _primaryTextColor),
+                ),
+                trailing: reservationItems.isEmpty
+                    ? null
+                    : Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _inputFillColor,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          '${reservationItems.length}',
+                          style: TextStyle(
+                            color: _primaryTextColor,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _showReservationList();
+                },
               ),
               if (_favoriteStationIds.isNotEmpty)
                 Padding(
@@ -1526,6 +1776,36 @@ class _MapForUserPageState extends State<MapForUserPage> {
               ),
             ),
             Positioned(
+              right: 16,
+              bottom: 180,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: _resetMapToInitialView,
+                  borderRadius: BorderRadius.circular(18),
+                  child: Ink(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: _panelColor.withValues(alpha: 0.96),
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.14),
+                          blurRadius: 12,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                      border: Border.all(
+                        color: _cardAccent.withValues(alpha: 0.18),
+                      ),
+                    ),
+                    child: Icon(Icons.home_rounded, color: _cardAccent),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
               bottom: 16,
               left: 16,
               right: 16,
@@ -1594,6 +1874,20 @@ class _ForecastOffsetSummary {
   final double outflow;
   final double netFlow;
   final DateTime? targetTime;
+}
+
+class _ReservationListItem {
+  const _ReservationListItem({
+    required this.stationId,
+    required this.stationName,
+    required this.targetTime,
+    required this.scheduleLabel,
+  });
+
+  final String stationId;
+  final String stationName;
+  final DateTime targetTime;
+  final String scheduleLabel;
 }
 
 class _StationMarkerChip extends StatelessWidget {
