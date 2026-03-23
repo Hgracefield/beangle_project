@@ -109,5 +109,44 @@ def get_user(user_id: int):
     }
 
 
+@app.put("/users/{user_id}")
+def update_user(user_id: int, req: AuthFastAPI):
+    try:
+        check_query = "SELECT user_id FROM user WHERE user_id=%s"
+        cursor.execute(check_query, (user_id,))
+        existing = cursor.fetchone()
+
+        if not existing:
+            return {"success": False, "error": "user_not_found"}
+
+        if req.password.strip():
+            query = """
+            UPDATE user
+            SET user_name=%s, user_email=%s, user_password=%s, user_phone=%s
+            WHERE user_id=%s
+            """
+            cursor.execute(
+                query,
+                (req.name, req.email, req.password, req.phone, user_id),
+            )
+        else:
+            query = """
+            UPDATE user
+            SET user_name=%s, user_email=%s, user_phone=%s
+            WHERE user_id=%s
+            """
+            cursor.execute(
+                query,
+                (req.name, req.email, req.phone, user_id),
+            )
+
+        db.commit()
+        return {"success": True}
+    except Exception as e:
+        db.rollback()
+        print("update_user error:", e)
+        return {"success": False, "error": str(e)}
+
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

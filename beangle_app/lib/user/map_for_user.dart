@@ -1,10 +1,13 @@
 import 'dart:convert';
 
+import 'package:beangle_app/app_shell.dart';
+import 'package:beangle_app/user/user_profile_page.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart' as latlong;
@@ -1326,6 +1329,34 @@ class _MapForUserPageState extends State<MapForUserPage> {
     _rebuildMarkers();
   }
 
+  Future<void> _logout() async {
+    // 로그인 사용자 식별값을 지우고 로그인 화면으로 복귀한다.
+    await _storage.remove(_userIdStorageKey);
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _userId = null;
+      _userName = '';
+      _userEmail = '';
+      _userPhone = '';
+      _userInfoStatus = '로그아웃됨';
+    });
+
+    Get.offAllNamed(AppRoutes.auth);
+  }
+
+  Future<void> _openUserProfile() async {
+    final bool? updated = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(builder: (_) => const UserProfilePage()),
+    );
+
+    if (updated == true) {
+      await _loadUserProfile();
+    }
+  }
+
   String _formatDateTime(DateTime value) {
     final String month = value.month.toString().padLeft(2, '0');
     final String day = value.day.toString().padLeft(2, '0');
@@ -1384,14 +1415,17 @@ class _MapForUserPageState extends State<MapForUserPage> {
           centerTitle: true,
           backgroundColor: _cardAccent,
           foregroundColor: Colors.white,
-          title: Row(
-            children: [
-              const Text('빙글', style: TextStyle(fontWeight: FontWeight.bold)),
-            ],
+          title: const Text(
+            '빙글',
+            style: TextStyle(fontWeight: FontWeight.bold),
           ),
           elevation: 0,
           actions: [
-            IconButton(icon: const Icon(Icons.person), onPressed: () {}),
+            IconButton(
+              icon: const Icon(Icons.manage_accounts),
+              tooltip: '개인정보',
+              onPressed: _openUserProfile,
+            ),
           ],
         ),
         drawer: Drawer(
@@ -1526,6 +1560,14 @@ class _MapForUserPageState extends State<MapForUserPage> {
                 onTap: () {
                   Navigator.of(context).pop();
                   _showReservationList();
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.logout, color: _primaryTextColor),
+                title: Text('로그아웃', style: TextStyle(color: _primaryTextColor)),
+                onTap: () async {
+                  Navigator.of(context).pop();
+                  await _logout();
                 },
               ),
               if (_favoriteStationIds.isNotEmpty)
