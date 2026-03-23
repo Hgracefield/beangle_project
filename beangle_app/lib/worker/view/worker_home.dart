@@ -1,6 +1,6 @@
 import 'package:beangle_app/app_shell.dart';
-import 'package:beangle_app/worker/map_for_worker.dart';
-import 'package:beangle_app/worker/worker_chat_list.dart';
+import 'package:beangle_app/worker/view/map_for_worker.dart';
+import 'package:beangle_app/worker/view/worker_chat_list.dart';
 import 'package:flutter/material.dart';
 
 class WorkerHomePage extends StatefulWidget {

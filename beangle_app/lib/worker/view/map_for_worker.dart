@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:beangle_app/worker/view/cycle_station_marker.dart';
+import 'package:beangle_app/worker/model/cycle_station.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
@@ -13,20 +15,22 @@ class MapForWorkerPage extends StatefulWidget {
 }
 
 class _MapForWorkerPageState extends State<MapForWorkerPage> {
-  static const _mapCenter = LatLng(37.6177, 126.9227);
-  static const _stationIds = <String>[
+
+  // === Property === 
+  final _mapCenter = LatLng(37.6177, 126.9227); // 시작 맵 좌표
+  final _stationIds = <String>[
     'ST-481',
     'ST-2425',
     'ST-1331',
     'ST-454',
     'ST-453',
     // 'ST-1482',
-  ];
-  static const _apiKey = '595975485377617236307a746f5179';
+  ]; // 보여줄 스테이션 번호
+  final _apiKey = '595975485377617236307a746f5179'; // 따릉이 api key
 
-  bool _isLoading = true;
-  String? _errorMessage;
-  List<_BikeStation> _stations = const [];
+  bool _isLoading = true; // 로딩 완료 여부
+  String? _errorMessage; // 에러 메시지
+  List<CycleStation> _stations = const [];
 
   @override
   void initState() {
@@ -34,68 +38,7 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
     _loadStations();
   }
 
-  Future<void> _loadStations() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-
-    try {
-      final stations = await Future.wait(_stationIds.map(_fetchStation));
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _stations = stations;
-        _isLoading = false;
-      });
-    } catch (_) {
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _isLoading = false;
-        _errorMessage = '스테이션 정보를 불러오지 못했습니다.';
-      });
-    }
-  }
-
-  Future<_BikeStation> _fetchStation(String stationId) async {
-    final uri = Uri.parse(
-      'http://openapi.seoul.go.kr:8088/$_apiKey/json/bikeList/1/1/$stationId',
-    );
-    final response = await http.get(uri);
-
-    if (response.statusCode != 200) {
-      throw Exception('Failed to load station: $stationId');
-    }
-
-    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
-    final bikeStatus = decoded['rentBikeStatus'] as Map<String, dynamic>?;
-    final rows = bikeStatus?['row'] as List<dynamic>?;
-
-    if (rows == null || rows.isEmpty) {
-      throw Exception('Empty station data: $stationId');
-    }
-
-    final row = rows.first as Map<String, dynamic>;
-    final latitude = double.tryParse(row['stationLatitude']?.toString() ?? '');
-    final longitude =
-        double.tryParse(row['stationLongitude']?.toString() ?? '');
-
-    // print(latitude);
-    if (latitude == null || longitude == null) {
-      throw Exception('Invalid coordinates: $stationId');
-    }
-    return _BikeStation(
-      id: stationId,
-      name: row['stationName']?.toString() ?? stationId,
-      rackCount: int.tryParse(row['rackTotCnt']?.toString() ?? '') ?? 0,
-      location: LatLng(latitude, longitude),
-    );
-  }
+  
 
   @override
   Widget build(BuildContext context) {
@@ -140,7 +83,7 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
               child: Stack(
                 children: [
                   FlutterMap(
-                    options: const MapOptions(
+                    options: MapOptions(
                       initialCenter: _mapCenter,
                       initialZoom: 13.2,
                     ),
@@ -156,7 +99,7 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
                             point: station.location,
                             width: 200,
                             height: 96,
-                            child: _BikeStationMarker(station: station),
+                            child: CycleStationMarker(station: station),
                           );
                         }).toList(),
                       ),
@@ -253,65 +196,69 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
         ),
       ],
     );
+  } // build
+
+  // === Functions === 
+  Future<void> _loadStations() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final stations = await Future.wait(_stationIds.map(_fetchStation));
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _stations = stations;
+        _isLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isLoading = false;
+        _errorMessage = '스테이션 정보를 불러오지 못했습니다.';
+      });
+    }
   }
-}
 
-class _BikeStationMarker extends StatelessWidget {
-  const _BikeStationMarker({required this.station});
+  Future<CycleStation> _fetchStation(String stationId) async {
+    final uri = Uri.parse(
+      'http://openapi.seoul.go.kr:8088/$_apiKey/json/bikeList/1/1/$stationId',
+    );
+    final response = await http.get(uri);
 
-  final _BikeStation station;
+    if (response.statusCode != 200) {
+      throw Exception('Failed to load station: $stationId');
+    }
 
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: const Color(0xFF2D8C6A), width: 1.5),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x1F000000),
-                blurRadius: 10,
-                offset: Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Text(
-            '${station.name} / ${station.rackCount}대',
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Color(0xFF1D6E52),
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-        const SizedBox(height: 2),
-        const Icon(
-          Icons.pedal_bike,
-          color: Color(0xFF2D8C6A),
-          size: 20,
-        ),
-      ],
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    final bikeStatus = decoded['rentBikeStatus'] as Map<String, dynamic>?;
+    final rows = bikeStatus?['row'] as List<dynamic>?;
+
+    if (rows == null || rows.isEmpty) {
+      throw Exception('Empty station data: $stationId');
+    }
+
+    final row = rows.first as Map<String, dynamic>;
+    final latitude = double.tryParse(row['stationLatitude']?.toString() ?? '');
+    final longitude =
+        double.tryParse(row['stationLongitude']?.toString() ?? '');
+
+    if (latitude == null || longitude == null) {
+      throw Exception('Invalid coordinates: $stationId');
+    }
+    return CycleStation(
+      id: stationId,
+      name: row['stationName']?.toString() ?? stationId,
+      parkingCount: int.tryParse(row['parkingBikeTotCnt']?.toString() ?? '') ?? 0,
+      rackCount: int.tryParse(row['rackTotCnt']?.toString() ?? '') ?? 0,
+      location: LatLng(latitude, longitude),
     );
   }
-}
-
-class _BikeStation {
-  const _BikeStation({
-    required this.id,
-    required this.name,
-    required this.rackCount,
-    required this.location,
-  });
-
-  final String id;
-  final String name;
-  final int rackCount;
-  final LatLng location;
 }
