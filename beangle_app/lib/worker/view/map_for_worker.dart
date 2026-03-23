@@ -109,11 +109,11 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
                       ),
                       MarkerLayer(
                         markers: visibleStations.map((station) {
-                          final predictionText = _buildPredictionText(
+                          final neededCount = _neededBikeCountForFollowing(
                             station.id,
-                            now,
                             nextRelocationTime,
                             followingRelocationTime,
+                            station.parkingCount,
                           );
                           return Marker(
                             point: station.location,
@@ -121,7 +121,10 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
                             height: 96,
                             child: CycleStationMarker(
                               station: station,
-                              predictionText: predictionText,
+                              currentTimeLabel: _formatHourLabel(now),
+                              nextRelocationLabel: nextRelocationLabel,
+                              currentCount: station.parkingCount,
+                              neededCount: neededCount,
                             ),
                           );
                         }).toList(),
@@ -325,50 +328,21 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
     return found ? sum : null;
   }
 
-  String? _buildPredictionText(
+  int? _neededBikeCountForFollowing(
     String stationId,
-    DateTime now,
     DateTime target,
     DateTime followingTarget,
+    int currentCount,
   ) {
-    final nextNetFlow = _cumulativeNetFlowBetween(
-      stationId,
-      DateTime(now.year, now.month, now.day, now.hour),
-      target,
-    );
     final followingNetFlow = _cumulativeNetFlowBetween(
       stationId,
       target,
       followingTarget,
     );
-    if (nextNetFlow == null && followingNetFlow == null) {
+    if (followingNetFlow == null) {
       return null;
     }
-
-    String formatLine(String startLabel, String endLabel, double? value) {
-      if (value == null) {
-        return '$startLabel부터 $endLabel까지 누적 데이터 없음';
-      }
-      final count = value.abs().round();
-      final status = value < 0
-          ? '부족'
-          : value > 0
-              ? '여유'
-              : '균형';
-      return '$startLabel부터 $endLabel까지 누적 $status ${count}대';
-    }
-
-    final nextLine = formatLine(
-      _formatHourLabel(now),
-      _formatRelocationLabel(target),
-      nextNetFlow,
-    );
-    final followingLine = formatLine(
-      _formatRelocationLabel(target),
-      _formatRelocationLabel(followingTarget),
-      followingNetFlow,
-    );
-    return '$nextLine\n$followingLine';
+    return followingNetFlow.round() - currentCount;
   }
 
   Future<void> _loadPredictionData() async {

@@ -3,11 +3,17 @@ import config
 from router.reservation import router as reservation_router
 from router.user import router as user_router
 from router.auth import router as auth_router
+from router.work import router as work_router
+from router.worker import router as worker_router
+from router.station import router as station_router
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 app.include_router(auth_router, prefix='/auth', tags=['auth'])
 app.include_router(user_router, prefix='/users', tags=['user'])
+app.include_router(work_router, prefix='/work', tags=['work']) 
+app.include_router(worker_router, prefix='/worker', tags=['worker']) 
+app.include_router(station_router, prefix='/station', tags=['station']) 
 app.include_router(reservation_router,prefix='/reservation',tags=['reservations'])
 
 # CORS 설정

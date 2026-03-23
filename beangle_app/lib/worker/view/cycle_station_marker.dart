@@ -6,33 +6,49 @@ class CycleStationMarker extends StatelessWidget {
   const CycleStationMarker({
     super.key,
     required this.station,
-    this.predictionText,
+    required this.currentTimeLabel,
+    required this.nextRelocationLabel,
+    required this.currentCount,
+    this.neededCount,
   });
   
   final CycleStation station;
-  final String? predictionText;
+  final String currentTimeLabel;
+  final String nextRelocationLabel;
+  final int currentCount;
+  final int? neededCount;
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: predictionText == null
-          ? null
-          : () {
-              showDialog<void>(
-                context: context,
-                builder: (context) {
-                  return AlertDialog(
-                    title: Text(station.name),
-                    content: Text(predictionText!),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('닫기'),
-                      ),
-                    ],
-                  );
-                },
-              );
-            },
+      onTap: () {
+        showDialog<void>(
+          context: context,
+          builder: (context) {
+            final neededLabel = neededCount == null
+                ? '데이터 없음'
+                : '${neededCount!}대';
+            return AlertDialog(
+              title: Text(station.name),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('현재 시간 : $currentTimeLabel'),
+                  Text('다음 재배치 시간 : $nextRelocationLabel'),
+                  Text('현재 댓수 : ${currentCount}대'),
+                  Text('필요한 댓수 : $neededLabel'),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('닫기'),
+                ),
+              ],
+            );
+          },
+        );
+      },
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
