@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 class ReservationApi {
   ReservationApi({
     http.Client? client,
-    this.baseUrl = 'https://example.com',
+    this.baseUrl = 'http://127.0.0.1:8000',
   }) : _client = client ?? http.Client();
 
   final http.Client _client;
@@ -27,7 +27,7 @@ class ReservationApi {
   Future<ReservationInfo> fetchReservationFromServer({
     required String reservationId,
   }) async {
-    final uri = Uri.parse('$baseUrl/reservations/$reservationId');
+    final uri = Uri.parse('$baseUrl/reservation/$reservationId');
     final response = await _client.get(uri);
 
     if (response.statusCode < 200 || response.statusCode >= 300) {

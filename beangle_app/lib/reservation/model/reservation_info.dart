@@ -1,12 +1,13 @@
 class ReservationInfo {
   const ReservationInfo({
+    //
     required this.dateText,
     required this.timeText,
     required this.stationCode,
     required this.notice,
     required this.imagePath,
   });
-
+  //
   final String dateText;
   final String timeText;
   final String stationCode;
@@ -15,17 +16,29 @@ class ReservationInfo {
 
   factory ReservationInfo.fromJson(Map<String, dynamic> json) {
     return ReservationInfo(
+      //
       dateText: json['dateText'] as String? ?? '',
       timeText: json['timeText'] as String? ?? '',
       stationCode: json['stationCode'] as String? ?? '',
       notice: json['notice'] as String? ?? '',
-      imagePath:
-          json['imagePath'] as String? ?? 'images/beangle_back.png',
+      imagePath: json['imagePath'] as String? ?? 'images/beangle_back.png',
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      //
+      'dateText': dateText,
+      'timeText': timeText,
+      'stationCode': stationCode,
+      'notice': notice,
+      'imagePath': imagePath,
+    };
   }
 
   factory ReservationInfo.empty() {
     return const ReservationInfo(
+      //
       dateText: '',
       timeText: '',
       stationCode: '',
