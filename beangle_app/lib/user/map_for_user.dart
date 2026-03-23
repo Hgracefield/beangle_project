@@ -746,14 +746,13 @@ class _MapForUserPageState extends State<MapForUserPage> {
       _selectedForecastHour,
     );
     final int currentAvailable = data['available'] as int? ?? 0;
-    final int rackCount = currentAvailable + (data['parking'] as int? ?? 0);
     final int reservationImpact = _cumulativeReservedCount(
       stationId,
       _selectedForecastHour,
     );
     final int predicted =
         (currentAvailable + summary.netFlow).round() - reservationImpact;
-    return predicted.clamp(0, rackCount);
+    return predicted.clamp(0, 9999);
   }
 
   _ForecastOffsetSummary _getForecastOffsetSummary(
