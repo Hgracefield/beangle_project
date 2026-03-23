@@ -36,6 +36,13 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
       'assets/data/station_hourly_predictions.json';
   static const String _reservationStorageKey = 'station_reservations';
 
+  static const Color _primaryColor = Color(0xFF49992E);
+  static const Color _pageBackgroundColor = Color(0xFFF5F8F1);
+  static const Color _headerTextColor = Colors.white;
+  static const Color _tableBorderColor = Color(0xFF91B184);
+  static const Color _stationColumnColor = Color(0xFFE8F2E1);
+  static const Color _valueCellColor = Colors.white;
+
   static const double _stationColumnWidth = 132;
   static const double _dataColumnWidth = 118;
 
@@ -69,80 +76,131 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
 
   final GetStorage _storage = GetStorage();
 
-  late final Future<List<_ReservationCycleRow>> _reservationCycleFuture;
+  VoidCallback? _cancelReservationStorageListener;
+  Map<String, dynamic> _predictionData = const <String, dynamic>{};
+  Map<String, _StationAvailabilitySnapshot> _stationAvailabilityByCode =
+      const <String, _StationAvailabilitySnapshot>{};
+  List<_ReservationCycleRow> _reservationCycleRows =
+      const <_ReservationCycleRow>[];
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _reservationCycleFuture = _loadReservationCycleRows();
+
+    // The dashboard listens to the same reservation storage key that drives
+    // the cycle forecast logic so reservation create/cancel writes rebuild the
+    // table without any manual refresh.
+    _cancelReservationStorageListener = _storage.listenKey(
+      _reservationStorageKey,
+      (_) => _rebuildReservationCycleRows(),
+    );
+
+    _initializeReservationCycleTable();
   }
 
-  Future<List<_ReservationCycleRow>> _loadReservationCycleRows() async {
+  @override
+  void dispose() {
+    _cancelReservationStorageListener?.call();
+    super.dispose();
+  }
+
+  Future<void> _initializeReservationCycleTable() async {
     final Map<String, dynamic> predictionData = await _loadPredictionData();
-    final Map<String, Map<int, int>> reservedCounts = _decodeReservedCounts(
-      _storage.read<Map<dynamic, dynamic>>(_reservationStorageKey),
-    );
-
-    return Future.wait(
-      _stationSeeds.map(
-        (_StationSeed seed) async => _buildReservationCycleRow(
-          seed: seed,
+    final Map<String, _StationAvailabilitySnapshot> stationAvailabilityByCode =
+        await _loadStationAvailabilityByCode();
+    final List<_ReservationCycleRow> reservationCycleRows =
+        _buildReservationCycleRows(
           predictionData: predictionData,
-          reservedCounts: reservedCounts,
-        ),
-      ),
-    );
-  }
+          stationAvailabilityByCode: stationAvailabilityByCode,
+          reservedCounts: _decodeReservedCounts(
+            _storage.read<Map<dynamic, dynamic>>(_reservationStorageKey),
+          ),
+        );
 
-  Future<Map<String, dynamic>> _loadPredictionData() async {
-    try {
-      final String jsonString = await rootBundle.loadString(
-        _predictionAssetPath,
-      );
-      return jsonDecode(jsonString) as Map<String, dynamic>;
-    } catch (_) {
-      return const <String, dynamic>{};
-    }
-  }
-
-  Map<String, Map<int, int>> _decodeReservedCounts(Map<dynamic, dynamic>? raw) {
-    final Map<String, Map<int, int>> decoded = <String, Map<int, int>>{};
-    if (raw == null) {
-      return decoded;
+    if (!mounted) {
+      return;
     }
 
-    raw.forEach((dynamic stationCode, dynamic offsetMap) {
-      if (offsetMap is! Map) {
-        return;
-      }
-
-      final Map<int, int> stationReservations = <int, int>{};
-      offsetMap.forEach((dynamic hour, dynamic count) {
-        final int? parsedHour = int.tryParse(hour.toString());
-        final int? parsedCount = int.tryParse(count.toString());
-        if (parsedHour == null || parsedCount == null || parsedCount <= 0) {
-          return;
-        }
-        stationReservations[parsedHour] = parsedCount;
-      });
-
-      if (stationReservations.isNotEmpty) {
-        decoded[stationCode.toString()] = stationReservations;
-      }
+    setState(() {
+      _predictionData = predictionData;
+      _stationAvailabilityByCode = stationAvailabilityByCode;
+      _reservationCycleRows = reservationCycleRows;
+      _isLoading = false;
     });
-
-    return decoded;
   }
 
-  Future<_ReservationCycleRow> _buildReservationCycleRow({
+  Future<Map<String, _StationAvailabilitySnapshot>>
+  _loadStationAvailabilityByCode() async {
+    final List<MapEntry<String, _StationAvailabilitySnapshot>> stationEntries =
+        await Future.wait(
+          _stationSeeds.map((_StationSeed seed) async {
+            return MapEntry<String, _StationAvailabilitySnapshot>(
+              seed.stationCode,
+              await _fetchStationAvailability(seed),
+            );
+          }),
+        );
+
+    return <String, _StationAvailabilitySnapshot>{
+      for (final MapEntry<String, _StationAvailabilitySnapshot> entry
+          in stationEntries)
+        entry.key: entry.value,
+    };
+  }
+
+  void _rebuildReservationCycleRows() {
+    if (_isLoading || _stationAvailabilityByCode.isEmpty) {
+      return;
+    }
+
+    final List<_ReservationCycleRow> reservationCycleRows =
+        _buildReservationCycleRows(
+          predictionData: _predictionData,
+          stationAvailabilityByCode: _stationAvailabilityByCode,
+          reservedCounts: _decodeReservedCounts(
+            _storage.read<Map<dynamic, dynamic>>(_reservationStorageKey),
+          ),
+        );
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _reservationCycleRows = reservationCycleRows;
+    });
+  }
+
+  List<_ReservationCycleRow> _buildReservationCycleRows({
+    required Map<String, dynamic> predictionData,
+    required Map<String, _StationAvailabilitySnapshot>
+    stationAvailabilityByCode,
+    required Map<String, Map<int, int>> reservedCounts,
+  }) {
+    return _stationSeeds
+        .map((_StationSeed seed) {
+          return _buildReservationCycleRow(
+            seed: seed,
+            predictionData: predictionData,
+            stationAvailability:
+                stationAvailabilityByCode[seed.stationCode] ??
+                seed.toSnapshot(),
+            reservedCounts: reservedCounts,
+          );
+        })
+        .toList(growable: false);
+  }
+
+  _ReservationCycleRow _buildReservationCycleRow({
     required _StationSeed seed,
     required Map<String, dynamic> predictionData,
+    required _StationAvailabilitySnapshot stationAvailability,
     required Map<String, Map<int, int>> reservedCounts,
-  }) async {
-    final _StationAvailabilitySnapshot station =
-        await _fetchStationAvailability(seed);
-    final int currentAvailableCycleCount = station.available;
-    final int rackCount = station.available + station.parking;
+  }) {
+    final int currentAvailableCycleCount = stationAvailability.available;
+    final int rackCount =
+        stationAvailability.available + stationAvailability.parking;
 
     return _ReservationCycleRow(
       stationCode: seed.stationCode,
@@ -212,6 +270,46 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
         reservedCounts: reservedCounts,
       ),
     );
+  }
+
+  Future<Map<String, dynamic>> _loadPredictionData() async {
+    try {
+      final String jsonString = await rootBundle.loadString(
+        _predictionAssetPath,
+      );
+      return jsonDecode(jsonString) as Map<String, dynamic>;
+    } catch (_) {
+      return const <String, dynamic>{};
+    }
+  }
+
+  Map<String, Map<int, int>> _decodeReservedCounts(Map<dynamic, dynamic>? raw) {
+    final Map<String, Map<int, int>> decoded = <String, Map<int, int>>{};
+    if (raw == null) {
+      return decoded;
+    }
+
+    raw.forEach((dynamic stationCode, dynamic offsetMap) {
+      if (offsetMap is! Map) {
+        return;
+      }
+
+      final Map<int, int> stationReservations = <int, int>{};
+      offsetMap.forEach((dynamic hour, dynamic count) {
+        final int? parsedHour = int.tryParse(hour.toString());
+        final int? parsedCount = int.tryParse(count.toString());
+        if (parsedHour == null || parsedCount == null || parsedCount <= 0) {
+          return;
+        }
+        stationReservations[parsedHour] = parsedCount;
+      });
+
+      if (stationReservations.isNotEmpty) {
+        decoded[stationCode.toString()] = stationReservations;
+      }
+    });
+
+    return decoded;
   }
 
   Future<_StationAvailabilitySnapshot> _fetchStationAvailability(
@@ -334,7 +432,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
     }
 
     return Table(
-      border: TableBorder.all(color: const Color(0xFFD2D7DE), width: 1),
+      border: TableBorder.all(color: _tableBorderColor, width: 1.2),
       defaultVerticalAlignment: TableCellVerticalAlignment.middle,
       columnWidths: columnWidths,
       children: <TableRow>[
@@ -367,13 +465,13 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
       height: 54,
       alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(horizontal: 12),
-      color: const Color(0xFFF3F5F7),
+      color: _primaryColor,
       child: Text(
         label,
         textAlign: TextAlign.center,
         style: const TextStyle(
           fontWeight: FontWeight.w700,
-          color: Color(0xFF1F2937),
+          color: _headerTextColor,
         ),
       ),
     );
@@ -384,7 +482,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
       height: 50,
       alignment: Alignment.centerLeft,
       padding: const EdgeInsets.symmetric(horizontal: 12),
-      color: const Color(0xFFF9FAFB),
+      color: _stationColumnColor,
       child: Text(
         stationCode,
         style: const TextStyle(
@@ -400,11 +498,14 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
       height: 50,
       alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(horizontal: 12),
-      color: Colors.white,
+      color: _valueCellColor,
       child: Text(
         '$value',
         textAlign: TextAlign.center,
-        style: const TextStyle(color: Color(0xFF111827)),
+        style: const TextStyle(
+          color: Color(0xFF111827),
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
@@ -414,52 +515,34 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
     return AppPageScaffold(
       title: 'Reservation Cycle Table',
       currentRoute: AppRoutes.dashboard,
-      body: FutureBuilder<List<_ReservationCycleRow>>(
-        future: _reservationCycleFuture,
-        builder:
-            (
-              BuildContext context,
-              AsyncSnapshot<List<_ReservationCycleRow>> snapshot,
-            ) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-
-              if (snapshot.hasError) {
-                return const Center(
-                  child: Text('Reservation cycle data could not be loaded.'),
-                );
-              }
-
-              final List<_ReservationCycleRow> rows =
-                  snapshot.data ?? const <_ReservationCycleRow>[];
-
-              return Center(
-                child: SingleChildScrollView(
+      body: ColoredBox(
+        color: _pageBackgroundColor,
+        child: Center(
+          child: _isLoading
+              ? const CircularProgressIndicator(color: _primaryColor)
+              : SingleChildScrollView(
                   padding: const EdgeInsets.all(24),
                   scrollDirection: Axis.horizontal,
                   child: SingleChildScrollView(
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         color: Colors.white,
+                        border: Border.all(
+                          color: _tableBorderColor,
+                          width: 1.4,
+                        ),
                         borderRadius: BorderRadius.circular(12),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x0F000000),
-                            blurRadius: 14,
-                            offset: Offset(0, 6),
-                          ),
-                        ],
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(12),
-                        child: _buildReservationCycleTable(rows),
+                        child: _buildReservationCycleTable(
+                          _reservationCycleRows,
+                        ),
                       ),
                     ),
                   ),
                 ),
-              );
-            },
+        ),
       ),
     );
   }
