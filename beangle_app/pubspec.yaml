@@ -88,9 +88,9 @@ dev_dependencies:
 flutter_launcher_icons:
     android: true
     ios: true
-    image_path: "images/bg_icon.png"
+    image_path: "images/beangle_logo.png"
 
-    adaptive_icon_foreground: "images/beangle_icon.png"
+    adaptive_icon_foreground: "images/beangle_logo.png"
     adaptive_icon_background: "#FFFFFF"
     min_sdk_android: 21
 # For information on the generic Dart part of this file, see the

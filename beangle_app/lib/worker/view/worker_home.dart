@@ -1,4 +1,3 @@
-import 'package:beangle_app/app_shell.dart';
 import 'package:beangle_app/worker/view/map_for_worker.dart';
 import 'package:beangle_app/worker/view/worker_chat_list.dart';
 import 'package:beangle_app/worker/view/worker_theme.dart';
@@ -30,12 +29,12 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
           '따릉이 재배치',
           style: TextStyle(fontWeight: FontWeight.w700),
         ),
-        actions: const [
-          Padding(
-            padding: EdgeInsets.only(right: 8),
-            child: GlobalRouteMenu(currentRoute: AppRoutes.workerMap),
-          ),
-        ],
+        // actions: const [
+        //   Padding(
+        //     padding: EdgeInsets.only(right: 8),
+        //     child: GlobalRouteMenu(currentPageLabel: 'Worker Map'),
+        //   ),
+        // ],
       ),
       body: IndexedStack(
         index: _selectedIndex,

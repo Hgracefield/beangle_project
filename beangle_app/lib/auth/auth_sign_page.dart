@@ -1,10 +1,9 @@
-import 'package:beangle_app/auth/auth_page.dart';
 import 'package:beangle_app/auth/custom_textfield.dart';
 import 'package:beangle_app/auth/google_auth_button.dart';
 import 'package:beangle_app/auth/google_auth_service.dart';
 import 'package:beangle_app/auth/primaryButton.dart';
+import 'package:beangle_app/auth/auth_page.dart';
 import 'package:flutter/material.dart';
-import 'package:beangle_app/app_shell.dart';
 import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -21,6 +20,8 @@ class AuthSignPage extends StatefulWidget {
 }
 
 class _AuthSignPageState extends State<AuthSignPage> {
+  static const String _logoAssetPath = 'images/beangle_logo.png';
+
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
@@ -133,7 +134,7 @@ class _AuthSignPageState extends State<AuthSignPage> {
         if (!mounted) {
           return;
         }
-        Navigator.pop(context);
+        Get.back();
       } else {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("회원가입에 실패했어요. (${response.statusCode})")));
       }
@@ -176,11 +177,11 @@ class _AuthSignPageState extends State<AuthSignPage> {
           if (userId != null) {
             await _storage.write("user_id", userId);
           }
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("구글 계정으로 가입됐어요.")));
           if (!mounted) {
             return;
           }
-          Get.to(AuthPage());
+          Get.snackbar('Success', '구글 계정으로 가입됐어요.');
+          Get.off(() => const AuthPage());
           return;
         }
       }
@@ -215,11 +216,46 @@ class _AuthSignPageState extends State<AuthSignPage> {
     }
   }
 
+  double _logoWidth(BuildContext context) {
+    final double screenWidth = MediaQuery.of(context).size.width;
+    if (screenWidth >= 1024) {
+      return 260;
+    }
+    if (screenWidth >= 600) {
+      return 210;
+    }
+    return 140;
+  }
+
+  double _fieldGap(BuildContext context) {
+    final double screenWidth = MediaQuery.of(context).size.width;
+    if (screenWidth >= 1024) {
+      return 18;
+    }
+    if (screenWidth >= 600) {
+      return 16;
+    }
+    return 12;
+  }
+
+  double _sectionGap(BuildContext context) {
+    final double screenWidth = MediaQuery.of(context).size.width;
+    if (screenWidth >= 1024) {
+      return 30;
+    }
+    if (screenWidth >= 600) {
+      return 26;
+    }
+    return 20;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return AppPageScaffold(
-      title: 'Sign Up',
-      currentRoute: AppRoutes.authSign,
+    final double logoWidth = _logoWidth(context);
+    final double fieldGap = _fieldGap(context);
+    final double sectionGap = _sectionGap(context);
+
+    return Scaffold(
       body: Center(
         child: Container(
           width: 400,
@@ -227,14 +263,16 @@ class _AuthSignPageState extends State<AuthSignPage> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.directions_bike, size: 60, color: Color(0xFF49992E)),
-              SizedBox(height: 10),
-              Text("회원가입", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+              Image.asset(
+                _logoAssetPath,
+                width: logoWidth,
+                fit: BoxFit.contain,
+              ),
 
-              SizedBox(height: 30),
+              SizedBox(height: sectionGap),
 
               CustomTextField(hint: "이름 입력", icon: Icons.person, controller: _nameController, textInputAction: TextInputAction.next),
-              SizedBox(height: 16),
+              SizedBox(height: fieldGap),
 
               CustomTextField(
                 hint: "전화번호 입력",
@@ -243,7 +281,7 @@ class _AuthSignPageState extends State<AuthSignPage> {
                 keyboardType: TextInputType.phone,
                 textInputAction: TextInputAction.next,
               ),
-              SizedBox(height: 16),
+              SizedBox(height: fieldGap),
 
               CustomTextField(
                 hint: "이메일 입력",
@@ -252,7 +290,7 @@ class _AuthSignPageState extends State<AuthSignPage> {
                 keyboardType: TextInputType.emailAddress,
                 textInputAction: TextInputAction.next,
               ),
-              SizedBox(height: 16),
+              SizedBox(height: fieldGap),
 
               CustomTextField(
                 hint: "비밀번호 입력",
@@ -262,24 +300,22 @@ class _AuthSignPageState extends State<AuthSignPage> {
                 textInputAction: TextInputAction.done,
               ),
 
-              SizedBox(height: 20),
+              SizedBox(height: sectionGap),
 
               PrimaryButton(text: "회원가입", onPressed: _onSignUpPressed),
 
-              SizedBox(height: 16),
+              SizedBox(height: fieldGap),
               Text("또는"),
 
-              SizedBox(height: 16),
-
-              SizedBox(height: 16),
+              SizedBox(height: fieldGap),
 
               GoogleAuthButton(onPressed: _onGoogleSignUpPressed, label: "Google로 가입"),
 
-              SizedBox(height: 16),
+              SizedBox(height: fieldGap),
 
               TextButton(
                 onPressed: () {
-                  Navigator.pop(context);
+                  Get.back();
                 },
                 child: Text("이미 계정이 있나요? 로그인"),
               ),

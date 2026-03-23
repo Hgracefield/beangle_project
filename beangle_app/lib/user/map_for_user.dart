@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:beangle_app/app_shell.dart';
+import 'package:beangle_app/auth/auth_page.dart';
 import 'package:beangle_app/reservation/model/reservation_api.dart';
 import 'package:beangle_app/reservation/model/reservation_info.dart';
 import 'package:beangle_app/reservation/reservation.dart';
@@ -1399,7 +1399,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
       _userInfoStatus = '로그아웃됨';
     });
 
-    Get.offAllNamed(AppRoutes.auth);
+    Get.offAll(() => const AuthPage());
   }
 
   Future<void> _openUserProfile() async {
