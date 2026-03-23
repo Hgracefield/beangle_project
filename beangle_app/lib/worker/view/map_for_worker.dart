@@ -1,8 +1,9 @@
 import 'dart:convert';
-
 import 'package:beangle_app/worker/view/cycle_station_marker.dart';
+import 'package:beangle_app/worker/view/worker_theme.dart';
 import 'package:beangle_app/worker/model/cycle_station.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
@@ -28,13 +29,19 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
   ]; // 보여줄 스테이션 번호
   final _apiKey = '595975485377617236307a746f5179'; // 따릉이 api key
 
+  final  String _predictionAssetPath =
+      'assets/data/station_hourly_predictions.json';
+
   bool _isLoading = true; // 로딩 완료 여부
   String? _errorMessage; // 에러 메시지
   List<CycleStation> _stations = const [];
 
+  Map<String, dynamic> _predictionData = const {};
+
   @override
   void initState() {
     super.initState();
+    _loadPredictionData();
     _loadStations();
   }
 
@@ -43,14 +50,21 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
   @override
   Widget build(BuildContext context) {
     final visibleStations = _stations;
-
+    final now = DateTime.now();
+    final nextRelocationTime = _nextRelocationTime(now);
+    final nextRelocationLabel = _formatRelocationLabel(nextRelocationTime);
+    final followingRelocationTime =
+        _followingRelocationTime(nextRelocationTime);
+    final followingRelocationLabel =
+        _formatRelocationLabel(followingRelocationTime);
+    // print(nextRelocationLabel);
     return Column(
       children: [
         Container(
           width: double.infinity,
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
           decoration: const BoxDecoration(
-            color: Color(0xFF3657C8),
+            color: workerThemeColor,
             borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
           ),
           child: Row(
@@ -95,11 +109,20 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
                       ),
                       MarkerLayer(
                         markers: visibleStations.map((station) {
+                          final predictionText = _buildPredictionText(
+                            station.id,
+                            now,
+                            nextRelocationTime,
+                            followingRelocationTime,
+                          );
                           return Marker(
                             point: station.location,
                             width: 200,
                             height: 96,
-                            child: CycleStationMarker(station: station),
+                            child: CycleStationMarker(
+                              station: station,
+                              predictionText: predictionText,
+                            ),
                           );
                         }).toList(),
                       ),
@@ -142,6 +165,12 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
                             if (!_isLoading) ...[
                               const SizedBox(height: 6),
                               Text('조회 스테이션 ${visibleStations.length}곳'),
+                              if (_predictionData.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                '재배치 누적: $nextRelocationLabel → $followingRelocationLabel',
+                              ),
+                            ],
                             ],
                           ],
                         ),
@@ -199,6 +228,176 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
   } // build
 
   // === Functions === 
+
+  DateTime _nextRelocationTime(DateTime now) {
+    final todayFour = DateTime(now.year, now.month, now.day, 4);
+    final todaySixteen = DateTime(now.year, now.month, now.day, 16);
+
+    if (now.isBefore(todayFour) || now.isAtSameMomentAs(todayFour)) {
+      return todayFour;
+    }
+    if (now.isBefore(todaySixteen) || now.isAtSameMomentAs(todaySixteen)) {
+      return todaySixteen;
+    }
+    return DateTime(now.year, now.month, now.day + 1, 4);
+  }
+
+  DateTime _followingRelocationTime(DateTime nextRelocationTime) {
+    if (nextRelocationTime.hour == 4) {
+      return DateTime(
+        nextRelocationTime.year,
+        nextRelocationTime.month,
+        nextRelocationTime.day,
+        16,
+      );
+    }
+    return DateTime(
+      nextRelocationTime.year,
+      nextRelocationTime.month,
+      nextRelocationTime.day + 1,
+      4,
+    );
+  }
+
+  String _formatRelocationLabel(DateTime target) {
+    return target.hour == 4 ? '오전 4시' : '오후 4시';
+  }
+
+  String _formatHourLabel(DateTime target) {
+    final hour = target.hour;
+    final isAm = hour < 12;
+    final displayHour = hour % 12 == 0 ? 12 : hour % 12;
+    return isAm ? '오전 ${displayHour}시' : '오후 ${displayHour}시';
+  }
+
+  double? _lookupNetFlow(String stationId, DateTime target) {
+    final stationData = _predictionData[stationId];
+    if (stationData is! Map) {
+      return null;
+    }
+    final slots = stationData['slots'];
+    if (slots is! Map) {
+      return null;
+    }
+
+    final monthKey = target.month.toString();
+    final weekdayKey = (target.weekday - 1).toString();
+    final hourKey = target.hour.toString();
+
+    final monthData = slots[monthKey];
+    if (monthData is! Map) {
+      return null;
+    }
+    final dayData = monthData[weekdayKey];
+    if (dayData is! Map) {
+      return null;
+    }
+    final hourData = dayData[hourKey];
+    if (hourData is! Map) {
+      return null;
+    }
+
+    final netFlow = hourData['net_flow'];
+    // print('netflow : $netFlow');
+    if (netFlow is num) {
+      return netFlow.toDouble();
+    }
+
+    return double.tryParse(netFlow?.toString() ?? '');
+  }
+
+  double? _cumulativeNetFlowBetween(
+    String stationId,
+    DateTime start,
+    DateTime end,
+  ) {
+    double sum = 0;
+    var found = false;
+    for (var cursor = start;
+        cursor.isBefore(end);
+        cursor = cursor.add(const Duration(hours: 1))) {
+      final netFlow = _lookupNetFlow(stationId, cursor);
+      if (netFlow != null) {
+        sum += netFlow;
+        found = true;
+      }
+    }
+    return found ? sum : null;
+  }
+
+  String? _buildPredictionText(
+    String stationId,
+    DateTime now,
+    DateTime target,
+    DateTime followingTarget,
+  ) {
+    final nextNetFlow = _cumulativeNetFlowBetween(
+      stationId,
+      DateTime(now.year, now.month, now.day, now.hour),
+      target,
+    );
+    final followingNetFlow = _cumulativeNetFlowBetween(
+      stationId,
+      target,
+      followingTarget,
+    );
+    if (nextNetFlow == null && followingNetFlow == null) {
+      return null;
+    }
+
+    String formatLine(String startLabel, String endLabel, double? value) {
+      if (value == null) {
+        return '$startLabel부터 $endLabel까지 누적 데이터 없음';
+      }
+      final count = value.abs().round();
+      final status = value < 0
+          ? '부족'
+          : value > 0
+              ? '여유'
+              : '균형';
+      return '$startLabel부터 $endLabel까지 누적 $status ${count}대';
+    }
+
+    final nextLine = formatLine(
+      _formatHourLabel(now),
+      _formatRelocationLabel(target),
+      nextNetFlow,
+    );
+    final followingLine = formatLine(
+      _formatRelocationLabel(target),
+      _formatRelocationLabel(followingTarget),
+      followingNetFlow,
+    );
+    return '$nextLine\n$followingLine';
+  }
+
+  Future<void> _loadPredictionData() async {
+    try {
+      final String jsonString = await rootBundle.loadString(
+        _predictionAssetPath,
+      );
+      final Map<String, dynamic> parsed =
+          jsonDecode(jsonString) as Map<String, dynamic>;
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _predictionData = parsed;
+        // _predictionStatus = '학습 모델 예측 변동량 준비 완료';
+      });
+    } catch (e) {
+      debugPrint('예측 데이터 로딩 실패: $e');
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        // _predictionStatus = '예측 변동량 없음';
+      });
+    }
+  }
   Future<void> _loadStations() async {
     setState(() {
       _isLoading = true;
@@ -261,4 +460,6 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
       location: LatLng(latitude, longitude),
     );
   }
+
+  
 }
