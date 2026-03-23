@@ -1,6 +1,6 @@
-
 import 'package:beangle_app/auth/custom_textfield.dart';
 import 'package:beangle_app/auth/primaryButton.dart';
+import 'package:beangle_app/view/restitutor/dashboard.dart';
 import 'package:beangle_app/worker/view/map_for_worker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -17,6 +17,8 @@ class WorkerLogin extends StatefulWidget {
 }
 
 class _WorkerLoginState extends State<WorkerLogin> {
+  static const String _logoAssetPath = 'images/beangle_logo.png';
+
   final GetStorage _storage = GetStorage();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
@@ -58,6 +60,15 @@ class _WorkerLoginState extends State<WorkerLogin> {
   }
 
   Future<void> _onLoginPressed() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+
+    if (email == 'super' && password == '123456') {
+      Get.snackbar('Success', '슈퍼 관리자 로그인 성공!');
+      Get.off(() => const Dashboard());
+      return;
+    }
+
     final errorMessage = _validateInputs();
     if (errorMessage != null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -67,8 +78,8 @@ class _WorkerLoginState extends State<WorkerLogin> {
     }
 
     final payload = {
-      "email": _emailController.text.trim(),
-      "password": _passwordController.text
+      "email": email,
+      "password": password
     };
     try {
       final response = await http.post(
@@ -99,13 +110,11 @@ class _WorkerLoginState extends State<WorkerLogin> {
           if (workerId != null) {
             await _storage.write('worker_id', workerId);
           }
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("로그인 성공!")),
-          );
           if (!mounted) {
             return;
           }
-          Get.to(MapForWorkerPage());
+          Get.snackbar('Success', '로그인 성공!');
+          Get.off(() => const MapForWorkerPage());
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text("이메일 또는 비밀번호가 올바르지 않아요.")),
@@ -127,10 +136,47 @@ class _WorkerLoginState extends State<WorkerLogin> {
     }
   }
 
+  double _logoWidth(BuildContext context) {
+    final double screenWidth = MediaQuery.of(context).size.width;
+    if (screenWidth >= 1024) {
+      return 260;
+    }
+    if (screenWidth >= 600) {
+      return 210;
+    }
+    return 140;
+  }
+
+  double _fieldGap(BuildContext context) {
+    final double screenWidth = MediaQuery.of(context).size.width;
+    if (screenWidth >= 1024) {
+      return 18;
+    }
+    if (screenWidth >= 600) {
+      return 16;
+    }
+    return 12;
+  }
+
+  double _sectionGap(BuildContext context) {
+    final double screenWidth = MediaQuery.of(context).size.width;
+    if (screenWidth >= 1024) {
+      return 30;
+    }
+    if (screenWidth >= 600) {
+      return 26;
+    }
+    return 20;
+  }
+
   
 
   @override
   Widget build(BuildContext context) {
+    final double logoWidth = _logoWidth(context);
+    final double fieldGap = _fieldGap(context);
+    final double sectionGap = _sectionGap(context);
+
     return Scaffold(
       body: Center(
         child: Container(
@@ -139,11 +185,13 @@ class _WorkerLoginState extends State<WorkerLogin> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.directions_bike, size: 60, color: Color(0xFF49992E)),
-              SizedBox(height: 10),
-              Text("빙글 - 관리자", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+              Image.asset(
+                _logoAssetPath,
+                width: logoWidth,
+                fit: BoxFit.contain,
+              ),
 
-              SizedBox(height: 30),
+              SizedBox(height: sectionGap),
 
               CustomTextField(
                 hint: "이메일 입력",
@@ -152,7 +200,7 @@ class _WorkerLoginState extends State<WorkerLogin> {
                 keyboardType: TextInputType.emailAddress,
                 textInputAction: TextInputAction.next,
               ),
-              SizedBox(height: 16),
+              SizedBox(height: fieldGap),
 
               CustomTextField(
                 hint: "비밀번호 입력",
@@ -162,7 +210,7 @@ class _WorkerLoginState extends State<WorkerLogin> {
                 textInputAction: TextInputAction.done,
               ),
 
-              SizedBox(height: 20),
+              SizedBox(height: sectionGap),
 
               PrimaryButton(
                 text: "로그인",

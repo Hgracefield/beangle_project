@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:beangle_app/app_shell.dart';
+import 'package:beangle_app/auth/auth_page.dart';
 import 'package:beangle_app/common/common_color.dart';
 import 'package:beangle_app/worker/model/work_api.dart';
 import 'package:beangle_app/worker/model/work_record.dart';
@@ -103,7 +103,6 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
                 icon: const Icon(Icons.refresh, color: Colors.white),
                 tooltip: '새로고침',
               ),
-            // child: GlobalRouteMenu(currentRoute: AppRoutes.workerMap),
           ),
         ],
       ),
@@ -607,6 +606,6 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
       _workerId = null;
     });
 
-    Get.offAllNamed(AppRoutes.auth);
+    Get.offAll(() => const AuthPage());
   }
 }

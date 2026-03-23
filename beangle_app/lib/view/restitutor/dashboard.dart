@@ -19,11 +19,12 @@
 // ===============================================
 import 'dart:convert';
 
-import 'package:beangle_app/app_shell.dart';
+import 'package:beangle_app/auth/auth_page.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:http/http.dart' as http;
 
@@ -47,6 +48,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
   static const String _predictionAssetPath =
       'assets/data/station_hourly_predictions.json';
   static const String _reservationStorageKey = 'station_reservations';
+  static const String _workerIdStorageKey = 'worker_id';
 
   static const Color _primaryColor = Color(0xFF49992E);
   static const Color _pageBackgroundColor = Color(0xFFF5F8F1);
@@ -135,6 +137,14 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
     }
 
     return 'http://10.0.2.2:8000';
+  }
+
+  Future<void> _logout() async {
+    await _storage.remove(_workerIdStorageKey);
+    if (!mounted) {
+      return;
+    }
+    Get.offAll(() => const AuthPage());
   }
 
   Future<void> _initializeReservationCycleTable() async {
@@ -1066,9 +1076,24 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
     final _ReservationCycleRow? selectedReservationCycleRow =
         _selectedReservationCycleRow;
 
-    return AppPageScaffold(
-      title: 'Reservation Cycle Table',
-      currentRoute: AppRoutes.dashboard,
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: const Color(0xFFF7FBF4),
+        foregroundColor: const Color(0xFF1F3516),
+        elevation: 0,
+        centerTitle: true,
+        title: const Text(
+          'Dashboard',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        actions: <Widget>[
+          IconButton(
+            onPressed: _logout,
+            tooltip: '로그아웃',
+            icon: const Icon(Icons.logout),
+          ),
+        ],
+      ),
       body: ColoredBox(
         color: _pageBackgroundColor,
         child: Center(

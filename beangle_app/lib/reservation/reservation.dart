@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:beangle_app/app_shell.dart';
 import 'package:beangle_app/reservation/model/reservation_api.dart';
 import 'package:beangle_app/reservation/model/reservation_info.dart';
 import 'package:flutter/material.dart';
@@ -19,9 +18,17 @@ class ReservationPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppPageScaffold(
-      title: '예약',
-      currentRoute: AppRoutes.reservation,
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: const Color(0xFFF7FBF4),
+        foregroundColor: const Color(0xFF1F3516),
+        elevation: 0,
+        centerTitle: true,
+        title: const Text(
+          '예약',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+      ),
       body: _ReservationView(
         initialReservation: initialReservation,
         initialStationName: initialStationName,
@@ -228,6 +235,40 @@ class _ReservationViewState extends State<_ReservationView> {
     }
   }
 
+  Future<void> _removeReservation(ReservationInfo reservation) async {
+    if (_isSubmitting) {
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+    });
+
+    try {
+      final int result = await _api.hardDeleteReservation(reservation);
+      if (result != 1) {
+        throw Exception('hard delete failed');
+      }
+
+      await _loadReservations();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isSubmitting = false;
+      });
+      Get.snackbar('Success', '예약이 삭제되었습니다.');
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _isSubmitting = false;
+      });
+      Get.snackbar('Error', '예약 삭제 중 오류가 발생했습니다.');
+    }
+  }
+
   void _selectPendingReservationOffset(int hourOffset) {
     final ReservationInfo? reservation = _pendingReservation;
     if (reservation == null || _isSubmitting) {
@@ -314,9 +355,13 @@ class _ReservationViewState extends State<_ReservationView> {
                 stationLabel: 'ST-${reservation.station_id}',
                 statusLabel: reservation.is_cancel == 1 ? '취소됨' : '예약 확정',
                 actionLabel: _isSubmitting ? '처리 중...' : '예약 취소',
-                secondaryLabel: '새로고침',
-                onSecondaryTap: _isSubmitting ? null : _loadReservations,
+                secondaryLabel: _isSubmitting ? '처리 중...' : '예약 삭제',
+                onSecondaryTap: _isSubmitting
+                    ? null
+                    : () => _removeReservation(reservation),
                 onActionTap: _isSubmitting
+                    ? null
+                    : reservation.is_cancel == 1
                     ? null
                     : () => _deleteReservation(reservation),
               ),

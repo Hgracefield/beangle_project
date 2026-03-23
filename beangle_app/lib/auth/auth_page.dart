@@ -1,12 +1,11 @@
-import 'package:beangle_app/auth/auth_sign_page.dart';
 import 'package:beangle_app/auth/custom_textfield.dart';
 import 'package:beangle_app/auth/google_auth_button.dart';
 import 'package:beangle_app/auth/google_auth_service.dart';
 import 'package:beangle_app/auth/primaryButton.dart';
+import 'package:beangle_app/auth/auth_sign_page.dart';
 import 'package:beangle_app/user/map_for_user.dart';
 import 'package:beangle_app/worker/view/worker_login.dart';
 import 'package:flutter/material.dart';
-import 'package:beangle_app/app_shell.dart';
 import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -23,6 +22,8 @@ class AuthPage extends StatefulWidget {
 }
 
 class _AuthPageState extends State<AuthPage> {
+  static const String _logoAssetPath = 'images/beangle_logo.png';
+
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final GoogleAuthService _googleAuthService = GoogleAuthService();
@@ -115,11 +116,11 @@ class _AuthPageState extends State<AuthPage> {
           if (userId != null) {
             await _storage.write("user_id", userId);
           }
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("로그인 성공!")));
           if (!mounted) {
             return;
           }
-          Get.to(MapForUserPage());
+          Get.snackbar('Success', '로그인 성공!');
+          Get.off(() => const MapForUserPage());
         } else {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("이메일 또는 비밀번호가 올바르지 않아요.")));
         }
@@ -166,11 +167,11 @@ class _AuthPageState extends State<AuthPage> {
             await _storage.write("user_id", userId);
           }
           final message = isSignUp ? "구글 가입 완료!" : "구글 로그인 완료!";
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
           if (!mounted) {
             return;
           }
-          Get.to(MapForUserPage());
+          Get.snackbar('Success', message);
+          Get.off(() => const MapForUserPage());
           return;
         }
       }
@@ -205,11 +206,46 @@ class _AuthPageState extends State<AuthPage> {
     }
   }
 
+  double _logoWidth(BuildContext context) {
+    final double screenWidth = MediaQuery.of(context).size.width;
+    if (screenWidth >= 1024) {
+      return 260;
+    }
+    if (screenWidth >= 600) {
+      return 210;
+    }
+    return 140;
+  }
+
+  double _fieldGap(BuildContext context) {
+    final double screenWidth = MediaQuery.of(context).size.width;
+    if (screenWidth >= 1024) {
+      return 18;
+    }
+    if (screenWidth >= 600) {
+      return 16;
+    }
+    return 12;
+  }
+
+  double _sectionGap(BuildContext context) {
+    final double screenWidth = MediaQuery.of(context).size.width;
+    if (screenWidth >= 1024) {
+      return 30;
+    }
+    if (screenWidth >= 600) {
+      return 26;
+    }
+    return 20;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return AppPageScaffold(
-      title: 'Auth Page',
-      currentRoute: AppRoutes.auth,
+    final double logoWidth = _logoWidth(context);
+    final double fieldGap = _fieldGap(context);
+    final double sectionGap = _sectionGap(context);
+
+    return Scaffold(
       body: Center(
         child: Container(
           width: 400,
@@ -219,13 +255,16 @@ class _AuthPageState extends State<AuthPage> {
             children: [
               GestureDetector(
                 onTap: () {
-                  Get.to(WorkerLogin());
+                  Get.to(() => const WorkerLogin());
                 },
-                child: Icon(Icons.directions_bike, size: 60, color: Color(0xFF49992E))),
-              SizedBox(height: 10),
-              Text("빙글", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                child: Image.asset(
+                  _logoAssetPath,
+                  width: logoWidth,
+                  fit: BoxFit.contain,
+                ),
+              ),
 
-              SizedBox(height: 30),
+              SizedBox(height: sectionGap),
 
               CustomTextField(
                 hint: "이메일 입력",
@@ -234,7 +273,7 @@ class _AuthPageState extends State<AuthPage> {
                 keyboardType: TextInputType.emailAddress,
                 textInputAction: TextInputAction.next,
               ),
-              SizedBox(height: 16),
+              SizedBox(height: fieldGap),
 
               CustomTextField(
                 hint: "비밀번호 입력",
@@ -244,22 +283,22 @@ class _AuthPageState extends State<AuthPage> {
                 textInputAction: TextInputAction.done,
               ),
 
-              SizedBox(height: 20),
+              SizedBox(height: sectionGap),
 
               PrimaryButton(text: "로그인", onPressed: _onLoginPressed),
 
-              SizedBox(height: 16),
+              SizedBox(height: fieldGap),
               Text("또는"),
 
-              SizedBox(height: 16),
+              SizedBox(height: fieldGap),
 
               GoogleAuthButton(onPressed: _onGoogleLoginPressed, label: "Google로 로그인"),
 
-              SizedBox(height: 16),
+              SizedBox(height: fieldGap),
 
               TextButton(
                 onPressed: () {
-                  Get.to(AuthSignPage());
+                  Get.to(() => const AuthSignPage());
                 },
                 child: Text("회원가입"),
               ),
