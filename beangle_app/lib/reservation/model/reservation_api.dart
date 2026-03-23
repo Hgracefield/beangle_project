@@ -7,7 +7,7 @@ class ReservationApi {
   ReservationApi({
     //
     http.Client? client,
-    this.baseUrl = 'http://192.168.10.89:8000', //'http://127.0.0.1:8000',
+    this.baseUrl = 'http://127.0.0.1:8000', //'http://127.0.0.1:8000',
   }) : _client = client ?? http.Client();
 
   final http.Client _client;
@@ -37,6 +37,30 @@ class ReservationApi {
 
     final json = jsonDecode(response.body) as Map<String, dynamic>;
     return ReservationInfo.fromJson(json);
+  }
+
+  Future<int> insertReservation(ReservationInfo reservation) async {
+    print('======');
+    print(jsonEncode(reservation.toJson()));
+    final uri = Uri.parse('$baseUrl/reservation/insert');
+    final response = await _client.post(
+      //
+      uri,
+
+      headers: {
+        //
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+      },
+      body: jsonEncode(reservation.toJson()),
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('Failed to load reservation');
+    }
+
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+    return json['result'];
   }
 
   // reservation 불러오기

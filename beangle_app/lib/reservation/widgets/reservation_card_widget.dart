@@ -1,3 +1,4 @@
+import 'package:beangle_app/reservation/model/reservation_api.dart';
 import 'package:beangle_app/reservation/model/reservation_info.dart';
 import 'package:flutter/material.dart';
 
@@ -5,6 +6,16 @@ class ReservationCardWidget extends StatelessWidget {
   const ReservationCardWidget({super.key, required this.reservation});
 
   final ReservationInfo reservation;
+
+  // 저장 하기
+
+  Future<void> insertReservation() async {
+    ReservationInfo test = ReservationInfo(reservation_id: 0, user_id: 1, station_id: 444, time: DateTime.parse('2026-01-01'), is_cancel: 0);
+
+    final result = await ReservationApi().insertReservation(test);
+
+    print(result);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -52,13 +63,15 @@ class ReservationCardWidget extends StatelessWidget {
                 Center(child: Container(width: 1, height: 25, color: const Color(0xFFD9D9D9))),
                 Expanded(
                   child: TextButton(
-                    onPressed: () {},
+                    onPressed: () async {
+                      await insertReservation();
+                    },
                     style: TextButton.styleFrom(
                       foregroundColor: const Color(0xFF333333),
                       backgroundColor: Colors.transparent,
                       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.only(bottomRight: Radius.circular(18))),
                     ),
-                    child: const Text('예약 취소'),
+                    child: const Text('예약 하기'),
                   ),
                 ),
               ],

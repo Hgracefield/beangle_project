@@ -43,10 +43,10 @@ class ReservationInfo {
       'reservation_id': reservation_id,
       'user_id': user_id,
       'station_id': station_id,
-      'time': time,
+      'time': time.toString(),
       'is_cancel': is_cancel,
       // 'notice': notice,
-      'imagePath': imagePath,
+      //'imagePath': imagePath,
     };
   }
 

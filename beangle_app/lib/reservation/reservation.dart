@@ -10,7 +10,7 @@ class ReservationPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppPageScaffold(title: '예약 현황', currentRoute: AppRoutes.reservation, body: const _ReservationView());
+    return AppPageScaffold(title: '예약 ', currentRoute: AppRoutes.reservation, body: const _ReservationView());
   }
 }
 
