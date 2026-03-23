@@ -73,6 +73,37 @@ class ReservationApi {
     return json['result'];
   }
 
+  Future<int> insertReservations(List<Map<String, dynamic>> data) async {
+    // final J = {
+    //   //
+    //   "reservation_id": 0,
+    //   "user_id": 111,
+    //   "station_id": 111,
+    //   "time": "2026-03-23",
+    //   "is_cancel": 0,
+    // };
+
+    final uri = Uri.parse('$baseUrl/reservation/inserts');
+    final response = await _client.post(
+      //
+      uri,
+
+      headers: {
+        //
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+      },
+      body: jsonEncode(data),
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('Failed to load reservation');
+    }
+
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+    return json['result'];
+  }
+
   // reservation 불러오기
   // Future<List<ReservationInfo>> fetchReservations() async {
   Future<List<dynamic>> fetchReservations() async {

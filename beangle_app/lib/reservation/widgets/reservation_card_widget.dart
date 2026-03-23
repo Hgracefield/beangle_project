@@ -1,27 +1,32 @@
 import 'package:beangle_app/reservation/model/reservation_api.dart';
 import 'package:beangle_app/reservation/model/reservation_info.dart';
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 
 class ReservationCardWidget extends StatelessWidget {
-  const ReservationCardWidget({super.key, required this.reservation});
+  ReservationCardWidget({super.key, required this.reservation});
 
   final ReservationInfo reservation;
 
-  // 저장 하기
-
   Future<void> insertReservation() async {
-    ReservationInfo test = ReservationInfo(
-      //
-      reservation_id: 0,
-      user_id: 1,
-      station_id: 444,
-      time: DateTime.parse('2026-01-01'),
-      is_cancel: 0,
-    );
+    // ReservationInfo test = ReservationInfo(
+    //   //
+    //   reservation_id: 0,
+    //   user_id: 1,
+    //   station_id: 444,
+    //   time: DateTime.parse('2026-01-01'),
+    //   is_cancel: 0,
+    // );
 
-    final result = await ReservationApi().insertReservation(test);
-
-    print(result);
+    final result = await ReservationApi().insertReservation(reservation);
+    if (result == 1) {
+      // Display Success Message
+      // Remove current index
+      Get.snackbar("Success", "Added Successfully");
+    } else {
+      // Display Error Message
+      Get.snackbar("Error", "Added Error");
+    }
   }
 
   @override
@@ -45,7 +50,7 @@ class ReservationCardWidget extends StatelessWidget {
                 const SizedBox(height: 16),
                 _ReservationRow(label: '예약 시간', value: reservation.time.hour.toString()),
                 const SizedBox(height: 16),
-                _ReservationRow(label: '대여소 번호', value: reservation.station_id.toString()),
+                _ReservationRow(label: '대여소 번호', value: "ST-" + reservation.station_id.toString()),
               ],
             ),
           ),
@@ -58,7 +63,9 @@ class ReservationCardWidget extends StatelessWidget {
               children: [
                 Expanded(
                   child: TextButton(
-                    onPressed: () {},
+                    onPressed: () {
+                      Get.back();
+                    },
                     style: TextButton.styleFrom(
                       foregroundColor: const Color(0xFF333333),
                       backgroundColor: Colors.transparent,

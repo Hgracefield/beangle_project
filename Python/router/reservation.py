@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 import pymysql
 import config
+from typing import List
 
 router = APIRouter()
 	
@@ -80,6 +81,32 @@ async def get():
     print(results)
 
     return {'results':results}
+
+
+@router.post('/inserts')
+async def insert(data: List[ReservationModel]):
+  
+  print('=== Inserts Reservation ===')
+  returnValue : int = 0
+  try:
+    conn = connect()
+    curs = conn.cursor()
+
+    for d in data:
+        sql = 'INSERT INTO reservation(user_id, station_id, `time`, is_cancel) values(%s,%s,%s,%s)'
+        curs.execute(sql,[d.user_id, d.station_id, d.time, d.is_cancel])
+    conn.commit()
+    returnValue = 1
+
+    
+  except Exception as err:
+    conn.rollback()
+    returnValue = 0
+    print('ERROR(INSERT): Rollbacked')
+    print(err)
+  finally:
+     conn.close()
+     return {'result':returnValue}
 
 
 @router.post('/insert')
