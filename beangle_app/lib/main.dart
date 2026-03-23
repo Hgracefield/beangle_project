@@ -3,7 +3,6 @@ import 'package:beangle_app/app_shell.dart';
 import 'package:beangle_app/auth/auth_find_info.dart';
 import 'package:beangle_app/auth/auth_page.dart';
 import 'package:beangle_app/auth/auth_sign_page.dart';
-import 'package:beangle_app/dashboard/dashboard.dart';
 import 'package:beangle_app/reservation/reservation.dart';
 import 'package:beangle_app/user/map_for_user.dart';
 import 'package:beangle_app/worker/view/map_for_worker.dart';
