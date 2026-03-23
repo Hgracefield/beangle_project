@@ -1,4 +1,5 @@
 // ===============================================
+// Creator: Chansol, Park
 // File: dashboard.dart
 // Purpose: Reservation cycle table page
 //
@@ -6,10 +7,13 @@
 // - 23-Mar-2026, Codex
 //   - Simplified the page to a centered Excel-style table.
 //   - Aligned the column mapping with the stationCode + cycle availability data.
+// - 23-Mar-2026, Codex
+//   - Added station selection and a selected-station chart view with fl_chart.
 // ===============================================
 import 'dart:convert';
 
 import 'package:beangle_app/app_shell.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get_storage/get_storage.dart';
@@ -82,6 +86,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
       const <String, _StationAvailabilitySnapshot>{};
   List<_ReservationCycleRow> _reservationCycleRows =
       const <_ReservationCycleRow>[];
+  String? _selectedStationCode;
   bool _isLoading = true;
 
   @override
@@ -126,6 +131,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
       _predictionData = predictionData;
       _stationAvailabilityByCode = stationAvailabilityByCode;
       _reservationCycleRows = reservationCycleRows;
+      _selectedStationCode = _resolveSelectedStationCode(reservationCycleRows);
       _isLoading = false;
     });
   }
@@ -169,7 +175,39 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
 
     setState(() {
       _reservationCycleRows = reservationCycleRows;
+      _selectedStationCode = _resolveSelectedStationCode(reservationCycleRows);
     });
+  }
+
+  String? _resolveSelectedStationCode(List<_ReservationCycleRow> rows) {
+    if (rows.isEmpty) {
+      return null;
+    }
+
+    final String? selectedStationCode = _selectedStationCode;
+    if (selectedStationCode != null &&
+        rows.any(
+          (_ReservationCycleRow row) => row.stationCode == selectedStationCode,
+        )) {
+      return selectedStationCode;
+    }
+
+    return rows.first.stationCode;
+  }
+
+  _ReservationCycleRow? get _selectedReservationCycleRow {
+    final String? selectedStationCode = _selectedStationCode;
+    if (selectedStationCode == null) {
+      return _reservationCycleRows.isEmpty ? null : _reservationCycleRows.first;
+    }
+
+    for (final _ReservationCycleRow row in _reservationCycleRows) {
+      if (row.stationCode == selectedStationCode) {
+        return row;
+      }
+    }
+
+    return _reservationCycleRows.isEmpty ? null : _reservationCycleRows.first;
   }
 
   List<_ReservationCycleRow> _buildReservationCycleRows({
@@ -510,8 +548,216 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
     );
   }
 
+  Widget _buildStationDropdown() {
+    return SizedBox(
+      width: 240,
+      child: DropdownButtonFormField<String>(
+        key: ValueKey<String?>(_selectedStationCode),
+        initialValue: _selectedStationCode,
+        decoration: InputDecoration(
+          labelText: 'Station',
+          labelStyle: const TextStyle(
+            color: Color(0xFF355F25),
+            fontWeight: FontWeight.w600,
+          ),
+          filled: true,
+          fillColor: Colors.white,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 14,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: _tableBorderColor),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: _tableBorderColor),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: _primaryColor, width: 1.6),
+          ),
+        ),
+        items: _reservationCycleRows
+            .map(
+              (_ReservationCycleRow row) => DropdownMenuItem<String>(
+                value: row.stationCode,
+                child: Text(row.stationCode),
+              ),
+            )
+            .toList(growable: false),
+        onChanged: (String? stationCode) {
+          if (stationCode == null) {
+            return;
+          }
+
+          setState(() {
+            _selectedStationCode = stationCode;
+          });
+        },
+      ),
+    );
+  }
+
+  Widget _buildSectionTitle(String title) {
+    return Text(
+      title,
+      style: const TextStyle(
+        color: Color(0xFF26481A),
+        fontSize: 17,
+        fontWeight: FontWeight.w700,
+      ),
+    );
+  }
+
+  Widget _buildSectionFrame({required Widget child}) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: _tableBorderColor, width: 1.4),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: ClipRRect(borderRadius: BorderRadius.circular(12), child: child),
+    );
+  }
+
+  Widget _buildStationTrendChart(_ReservationCycleRow row) {
+    // The chart uses the same ordered reservation cycle columns as the table so
+    // the selected station shows one consistent data story in both views.
+    final List<_ChartPoint> chartPoints = _ReservationCycleColumn.values
+        .map(
+          (_ReservationCycleColumn column) => _ChartPoint(
+            label: column.chartLabel,
+            value: row.valueFor(column),
+          ),
+        )
+        .toList(growable: false);
+    final int maxValue = chartPoints.fold<int>(
+      0,
+      (int currentMax, _ChartPoint point) =>
+          point.value > currentMax ? point.value : currentMax,
+    );
+    final double maxY = (maxValue <= 0 ? 1 : maxValue + 2).toDouble();
+    final double interval = maxY <= 4 ? 1 : (maxY / 4).ceilToDouble();
+
+    return SizedBox(
+      height: 300,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 18, 18, 12),
+        child: LineChart(
+          LineChartData(
+            minX: 0,
+            maxX: (chartPoints.length - 1).toDouble(),
+            minY: 0,
+            maxY: maxY,
+            gridData: FlGridData(
+              show: true,
+              drawVerticalLine: false,
+              horizontalInterval: interval,
+              getDrawingHorizontalLine: (double value) {
+                return const FlLine(color: Color(0xFFE0E6DA), strokeWidth: 1);
+              },
+            ),
+            borderData: FlBorderData(
+              show: true,
+              border: Border.all(color: _tableBorderColor, width: 1),
+            ),
+            lineBarsData: <LineChartBarData>[
+              LineChartBarData(
+                isCurved: false,
+                color: _primaryColor,
+                barWidth: 3,
+                isStrokeCapRound: true,
+                dotData: FlDotData(
+                  show: true,
+                  getDotPainter:
+                      (
+                        FlSpot spot,
+                        double percent,
+                        LineChartBarData bar,
+                        int index,
+                      ) {
+                        return FlDotCirclePainter(
+                          radius: 4,
+                          color: _primaryColor,
+                          strokeWidth: 1.5,
+                          strokeColor: Colors.white,
+                        );
+                      },
+                ),
+                belowBarData: BarAreaData(show: false),
+                spots: List<FlSpot>.generate(
+                  chartPoints.length,
+                  (int index) => FlSpot(
+                    index.toDouble(),
+                    chartPoints[index].value.toDouble(),
+                  ),
+                ),
+              ),
+            ],
+            titlesData: FlTitlesData(
+              topTitles: const AxisTitles(
+                sideTitles: SideTitles(showTitles: false),
+              ),
+              rightTitles: const AxisTitles(
+                sideTitles: SideTitles(showTitles: false),
+              ),
+              bottomTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  reservedSize: 36,
+                  interval: 1,
+                  getTitlesWidget: (double value, TitleMeta meta) {
+                    final int index = value.toInt();
+                    if (index < 0 || index >= chartPoints.length) {
+                      return const SizedBox.shrink();
+                    }
+
+                    return SideTitleWidget(
+                      meta: meta,
+                      space: 10,
+                      child: Text(
+                        chartPoints[index].label,
+                        style: const TextStyle(
+                          color: Color(0xFF37522B),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              leftTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  reservedSize: 40,
+                  interval: interval,
+                  getTitlesWidget: (double value, TitleMeta meta) {
+                    return Text(
+                      value.toInt().toString(),
+                      style: const TextStyle(
+                        color: Color(0xFF37522B),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final _ReservationCycleRow? selectedReservationCycleRow =
+        _selectedReservationCycleRow;
+
     return AppPageScaffold(
       title: 'Reservation Cycle Table',
       currentRoute: AppRoutes.dashboard,
@@ -520,24 +766,39 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
         child: Center(
           child: _isLoading
               ? const CircularProgressIndicator(color: _primaryColor)
+              : selectedReservationCycleRow == null
+              ? const Text('No station data available.')
               : SingleChildScrollView(
                   padding: const EdgeInsets.all(24),
-                  scrollDirection: Axis.horizontal,
-                  child: SingleChildScrollView(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        border: Border.all(
-                          color: _tableBorderColor,
-                          width: 1.4,
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: _buildReservationCycleTable(
-                          _reservationCycleRows,
-                        ),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 1120),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          _buildStationDropdown(),
+                          const SizedBox(height: 20),
+                          _buildSectionTitle('Cycle Table'),
+                          const SizedBox(height: 10),
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: _buildSectionFrame(
+                              child: _buildReservationCycleTable(
+                                <_ReservationCycleRow>[
+                                  selectedReservationCycleRow,
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          _buildSectionTitle('Availability Trend'),
+                          const SizedBox(height: 10),
+                          _buildSectionFrame(
+                            child: _buildStationTrendChart(
+                              selectedReservationCycleRow,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -588,47 +849,65 @@ enum _ReservationCycleColumn {
   currentAvailableCycleCount(
     excelHeader: 'current_available_cycle_count',
     label: 'Current',
+    chartLabel: 'Now',
   ),
   availableCycleCountAfter1Hour(
     excelHeader: 'available_cycle_count_after_1_hour',
     label: '+1h',
+    chartLabel: '1h',
   ),
   availableCycleCountAfter2Hours(
     excelHeader: 'available_cycle_count_after_2_hours',
     label: '+2h',
+    chartLabel: '2h',
   ),
   availableCycleCountAfter3Hours(
     excelHeader: 'available_cycle_count_after_3_hours',
     label: '+3h',
+    chartLabel: '3h',
   ),
   availableCycleCountAfter4Hours(
     excelHeader: 'available_cycle_count_after_4_hours',
     label: '+4h',
+    chartLabel: '4h',
   ),
   availableCycleCountAfter5Hours(
     excelHeader: 'available_cycle_count_after_5_hours',
     label: '+5h',
+    chartLabel: '5h',
   ),
   availableCycleCountAfter6Hours(
     excelHeader: 'available_cycle_count_after_6_hours',
     label: '+6h',
+    chartLabel: '6h',
   ),
   availableCycleCountAfter7Hours(
     excelHeader: 'available_cycle_count_after_7_hours',
     label: '+7h',
+    chartLabel: '7h',
   ),
   availableCycleCountAfter8Hours(
     excelHeader: 'available_cycle_count_after_8_hours',
     label: '+8h',
+    chartLabel: '8h',
   );
 
   const _ReservationCycleColumn({
     required this.excelHeader,
     required this.label,
+    required this.chartLabel,
   });
 
   final String excelHeader;
   final String label;
+  final String chartLabel;
+}
+
+class _ChartPoint {
+  const _ChartPoint({required this.label, required this.value});
+
+  final String label;
+  final int value;
 }
 
 class _ReservationCycleRow {

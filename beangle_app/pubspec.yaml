@@ -65,6 +65,9 @@ dependencies:
     # table calendar
     table_calendar: ^3.2.0
 
+    # charts
+    fl_chart: ^1.0.0
+
     # Get Storage
     get_storage: ^2.1.1
 
