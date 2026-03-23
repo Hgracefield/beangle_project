@@ -185,10 +185,10 @@ class CycleStationMarker extends StatelessWidget {
                     ? actionDelta
                     : limitedRecoveryCount ?? actionDelta.abs();
         final DateTime activationStart = nextRelocationTime.subtract(
-          const Duration(hours: 1),
+          const Duration(hours: 5),
         );
         final DateTime activationEnd = nextRelocationTime.add(
-          const Duration(hours: 1),
+          const Duration(hours: 5),
         );
         final bool isActionWindowActive =
             !currentTime.isBefore(activationStart) &&
