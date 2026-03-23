@@ -16,6 +16,7 @@ class MapForUserPage extends StatefulWidget {
 }
 
 class _MapForUserPageState extends State<MapForUserPage> {
+  // 외부 API/로컬 저장소/예측 자산 경로 상수들.
   static const String _bikeApiKey = '595975485377617236307a746f5179';
   static const String _predictionAssetPath =
       'assets/data/station_hourly_predictions.json';
@@ -26,12 +27,14 @@ class _MapForUserPageState extends State<MapForUserPage> {
   final MapController _mapController = MapController();
   final GetStorage _storage = GetStorage();
 
+  // 지도와 화면 상태.
   late latlong.LatLng _currentPosition;
   List<Marker> _markers = [];
   Set<String> _favoriteStationIds = <String>{};
   Map<String, List<DateTime>> _reservedTimes = <String, List<DateTime>>{};
   String? _selectedStationId;
 
+  // UI 토글 상태.
   bool _isDarkTheme = false;
   bool _isWeatherExpanded = false;
   bool _isControlPanelExpanded = false;
@@ -41,6 +44,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
 
   int _selectedForecastHour = 1;
 
+  // 날씨/대여소 상태 문구와 수치.
   String _weatherInfo = '날씨 정보 로딩 중...';
   String _temperature = '--';
   String _humidity = '--';
@@ -50,8 +54,10 @@ class _MapForUserPageState extends State<MapForUserPage> {
   String _stationStatus = '실시간 대수 불러오는 중...';
   String _predictionStatus = '예측 변동량 불러오는 중...';
 
+  // 학습 모델이 생성한 시간대별 예측 자산 전체.
   Map<String, dynamic> _predictionData = const {};
 
+  // 화면에서 관리하는 고정 스테이션 메타데이터.
   final Map<String, Map<String, dynamic>> _stations = {
     'ST-481': {
       'name': '상현',
@@ -98,6 +104,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   @override
   void initState() {
     super.initState();
+    // 첫 진입 시 로컬 상태, 예측 자산, 실시간 대여소, 위치/날씨를 순서대로 준비한다.
     _currentPosition = const latlong.LatLng(37.615, 126.917);
     _hydrateLocalState();
     _loadPredictionData();
@@ -108,6 +115,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   void _hydrateLocalState() {
+    // 즐겨찾기, 다크모드, 예약 시각을 로컬 저장소에서 복구한다.
     final List<dynamic>? favorites = _storage.read<List<dynamic>>(
       _favoriteStorageKey,
     );
@@ -122,6 +130,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   Map<String, List<DateTime>> _decodeReservedTimes(Map<dynamic, dynamic>? raw) {
+    // 예전 offset 저장 형식과 현재 DateTime 저장 형식을 모두 읽을 수 있게 유지한다.
     final Map<String, List<DateTime>> decoded = <String, List<DateTime>>{};
     if (raw == null) {
       return decoded;
@@ -172,6 +181,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   void _persistReservations() {
+    // 지난 예약은 정리하고, 남아 있는 예약만 ISO 문자열로 저장한다.
     _pruneExpiredReservations();
     final Map<String, List<String>> encoded = <String, List<String>>{};
     _reservedTimes.forEach((String stationId, List<DateTime> times) {
@@ -189,6 +199,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   void _pruneExpiredReservations() {
+    // 현재 시각보다 과거인 예약은 화면/예측 반영에서 제외한다.
     final DateTime now = DateTime.now();
     final Map<String, List<DateTime>> next = <String, List<DateTime>>{};
 
@@ -204,6 +215,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   Future<void> _getCurrentLocation() async {
+    // 현재 위치를 받아와 지도 중심과 현재 날씨 조회 기준점에 반영한다.
     try {
       final bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
@@ -248,6 +260,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   Future<void> _loadPredictionData() async {
+    // 앱에 포함된 학습 모델 예측 결과 JSON을 읽어 시간대별 예측에 사용한다.
     try {
       final String jsonString = await rootBundle.loadString(
         _predictionAssetPath,
@@ -277,6 +290,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   Future<void> _loadStations() async {
+    // 각 스테이션의 현재 대여 가능 대수를 실시간 API로 갱신한다.
     if (!mounted) {
       return;
     }
@@ -337,6 +351,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   Future<_StationAvailability> _fetchStationAvailability(
     String stationId,
   ) async {
+    // 서울 따릉이 API에서 스테이션 한 곳의 현재 재고 상태를 가져온다.
     final Uri uri = Uri.parse(
       'http://openapi.seoul.go.kr:8088/$_bikeApiKey/json/bikeList/1/1/$stationId',
     );
@@ -381,6 +396,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   List<MapEntry<String, Map<String, dynamic>>> _sortedStationEntries() {
+    // 즐겨찾기 스테이션이 먼저 오고, 그 안에서는 이름순으로 정렬한다.
     final List<MapEntry<String, Map<String, dynamic>>> entries = _stations
         .entries
         .toList();
@@ -399,6 +415,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   void _rebuildMarkers() {
+    // 현재 재고/예측 대수/즐겨찾기 상태를 반영해 지도 마커를 다시 만든다.
     final List<Marker> markers = <Marker>[];
     for (final MapEntry<String, Map<String, dynamic>> entry
         in _sortedStationEntries()) {
@@ -407,8 +424,8 @@ class _MapForUserPageState extends State<MapForUserPage> {
       markers.add(
         Marker(
           point: latlong.LatLng(data['lat'] as double, data['lng'] as double),
-          width: 120,
-          height: 86,
+          width: 136,
+          height: 108,
           child: GestureDetector(
             onTap: () => _showStationDialog(id, data),
             child: _StationMarkerChip(
@@ -443,6 +460,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   Future<void> _fetchWeather() async {
+    // 현재 날씨 또는 선택한 시간대의 예보를 Open-Meteo에서 읽는다.
     final DateTime now = DateTime.now();
     final DateTime targetDateTime = _isUsingCurrentWeather
         ? now
@@ -516,6 +534,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   _WeatherSnapshot _parseCurrentWeather(Map<String, dynamic> data) {
+    // 현재 실황 응답을 화면에서 쓰는 스냅샷 형태로 변환한다.
     final Map<String, dynamic> current =
         data['current'] as Map<String, dynamic>;
     final int weatherCode = (current['weather_code'] as num?)?.toInt() ?? -1;
@@ -533,6 +552,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
     Map<String, dynamic> data,
     DateTime targetDateTime,
   ) {
+    // 선택한 시각과 가장 가까운 시간대 예보를 찾아 스냅샷으로 변환한다.
     final Map<String, dynamic> hourly = data['hourly'] as Map<String, dynamic>;
     final List<dynamic> times = hourly['time'] as List<dynamic>? ?? <dynamic>[];
     final List<dynamic> temperatures =
@@ -637,6 +657,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
     String stationId,
     Map<String, dynamic> data,
   ) {
+    // 현재 재고 + 예측 순증감 - 예약 차감을 합쳐 최종 예측 대수를 계산한다.
     final _ForecastOffsetSummary summary = _getForecastOffsetSummary(
       stationId,
       _selectedForecastHour,
@@ -656,6 +677,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
     String stationId,
     int offsetHour,
   ) {
+    // 현재 시각을 기준으로 N시간 후까지의 누적 inflow/outflow/net_flow를 찾는다.
     final DateTime now = DateTime.now();
     final Map<String, dynamic>? predictionSlot = _lookupPredictionSlot(
       stationId,
@@ -678,6 +700,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
     String stationId,
     DateTime target,
   ) {
+    // 예측 자산은 month -> weekday -> hour 구조라서 현재 시각 슬롯을 그 경로로 조회한다.
     final Map<String, dynamic>? stationMap =
         _predictionData[stationId] as Map<String, dynamic>?;
     final Map<String, dynamic>? slotMap =
@@ -690,6 +713,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   int _cumulativeReservedCount(String stationId, int hour) {
+    // 예측 시점 이전까지 잡혀 있는 예약 수를 세어 예측 대수 차감에 반영한다.
     _pruneExpiredReservations();
     final List<DateTime> stationReservations =
         _reservedTimes[stationId] ?? <DateTime>[];
@@ -702,6 +726,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   void _toggleFavorite(String stationId) {
+    // 즐겨찾기 토글 후 로컬 저장소와 마커 정렬을 갱신한다.
     setState(() {
       if (_favoriteStationIds.contains(stationId)) {
         _favoriteStationIds.remove(stationId);
@@ -725,6 +750,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   void _focusStation(String stationId) {
+    // 특정 스테이션으로 지도를 이동시키고 선택 상태를 강조한다.
     final Map<String, dynamic>? station = _stations[stationId];
     if (station == null) {
       return;
@@ -741,6 +767,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   void _reserveSelectedStation() {
+    // 현재 선택한 스테이션을 선택한 시간대 기준으로 실제 예약 시각으로 저장한다.
     final String? stationId = _selectedStationId;
     if (stationId == null) {
       ScaffoldMessenger.of(
@@ -807,6 +834,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   void _clearReservation(String stationId, DateTime targetTime) {
+    // 예약 목록/상세보기에서 선택한 특정 예약 시각 한 건만 제거한다.
     final List<DateTime>? stationReservations = _reservedTimes[stationId];
     if (stationReservations == null) {
       return;
@@ -825,6 +853,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   void _clearReservationsUpToHour(String stationId, int hour) {
+    // 상세보기에서는 'N시간 후' 예측 구간 안에 포함되는 가장 가까운 예약 한 건을 취소한다.
     final List<DateTime>? stationReservations = _reservedTimes[stationId];
     if (stationReservations == null || stationReservations.isEmpty) {
       return;
@@ -850,6 +879,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   List<_ReservationListItem> _buildReservationItems() {
+    // 드로어 예약 목록에 표시할 화면용 데이터로 변환한다.
     _pruneExpiredReservations();
     final List<_ReservationListItem> items = <_ReservationListItem>[];
 
@@ -882,6 +912,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   void _showReservationList() {
+    // 드로어에서 열리는 간단한 예약 목록 바텀시트.
     final List<_ReservationListItem> reservations = _buildReservationItems();
 
     showModalBottomSheet<void>(
@@ -978,6 +1009,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   void _showStationDialog(String id, Map<String, dynamic> data) {
+    // 마커를 눌렀을 때 현재/예측/예약 반영 상태를 한 번에 보여주는 상세 다이얼로그.
     final _ForecastOffsetSummary forecastSummary = _getForecastOffsetSummary(
       id,
       _selectedForecastHour,
@@ -1150,6 +1182,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   void _selectForecastHour(int? hour) {
+    // 오른쪽 패널의 시간 선택값을 바꾸면 예보와 예측 대수가 함께 갱신된다.
     if (hour == null) {
       return;
     }
@@ -1162,6 +1195,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   void _resetToCurrentWeather() {
+    // 현재 날씨 모드로 복귀한다.
     setState(() {
       _isUsingCurrentWeather = true;
     });
@@ -1169,6 +1203,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   void _fitMarkersOnMap() {
+    // 모든 스테이션이 보이도록 지도 중심과 줌을 초기 상태로 맞춘다.
     if (_stations.isEmpty) {
       return;
     }
@@ -1203,6 +1238,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   void _resetMapToInitialView() {
+    // 선택 상태를 해제하고 전체 스테이션이 보이는 기본 지도 화면으로 돌아간다.
     setState(() {
       _selectedStationId = null;
     });
@@ -1243,6 +1279,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
 
   @override
   Widget build(BuildContext context) {
+    // 화면 전체는 지도 위에 날씨 카드, 예측 패널, 선택 스테이션 카드, 예약 버튼을 올리는 구조다.
     final DateTime now = DateTime.now();
     final DateTime selectedForecastTime = now.add(
       Duration(hours: _selectedForecastHour),
