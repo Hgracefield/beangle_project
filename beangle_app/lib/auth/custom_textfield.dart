@@ -8,6 +8,8 @@ class CustomTextField extends StatelessWidget {
   final TextInputType? keyboardType;
   final TextInputAction? textInputAction;
   final ValueChanged<String>? onChanged;
+  final bool readOnly;
+  final bool enabled;
 
   const CustomTextField({
     super.key,
@@ -18,6 +20,8 @@ class CustomTextField extends StatelessWidget {
     this.keyboardType,
     this.textInputAction,
     this.onChanged,
+    this.readOnly = false,
+    this.enabled = true,
   });
 
   @override
@@ -25,15 +29,17 @@ class CustomTextField extends StatelessWidget {
     return TextField(
       controller: controller,
       obscureText: obscure,
+      readOnly: readOnly,
+      enabled: enabled,
       keyboardType: keyboardType,
       textInputAction: textInputAction,
       onChanged: onChanged,
       decoration: InputDecoration(
         prefixIcon: Icon(icon),
         hintText: hint,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        filled: !enabled || readOnly,
+        fillColor: const Color(0xFFF2F4F1),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }

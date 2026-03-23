@@ -264,6 +264,18 @@ class _UserProfilePageState extends State<UserProfilePage> {
                         controller: _emailController,
                         keyboardType: TextInputType.emailAddress,
                         textInputAction: TextInputAction.next,
+                        readOnly: true,
+                      ),
+                      const SizedBox(height: 8),
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '아이디(이메일)는 로그인 식별값이라 수정할 수 없습니다.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF6B6B6B),
+                          ),
+                        ),
                       ),
                       const SizedBox(height: 16),
                       CustomTextField(
