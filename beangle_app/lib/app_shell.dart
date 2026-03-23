@@ -1,9 +1,9 @@
+import 'package:beangle_app/view/restitutor/dashboard.dart';
 import 'package:beangle_app/worker/view/worker_home.dart';
 import 'package:flutter/material.dart';
 import 'package:beangle_app/auth/auth_find_info.dart';
 import 'package:beangle_app/auth/auth_page.dart';
 import 'package:beangle_app/auth/auth_sign_page.dart';
-import 'package:beangle_app/dashboard/dashboard.dart';
 import 'package:beangle_app/reservation/reservation.dart';
 import 'package:beangle_app/user/map_for_user.dart';
 
@@ -47,7 +47,7 @@ class AppRoutes {
     AppRouteItem(
       routeName: dashboard,
       label: 'Dashboard',
-      builder: (_) => const DashboardPage(),
+      builder: (_) => const Dashboard(),
     ),
     AppRouteItem(
       routeName: reservation,
