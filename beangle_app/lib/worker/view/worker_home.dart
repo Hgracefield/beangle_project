@@ -1,6 +1,7 @@
 import 'package:beangle_app/app_shell.dart';
 import 'package:beangle_app/worker/view/map_for_worker.dart';
 import 'package:beangle_app/worker/view/worker_chat_list.dart';
+import 'package:beangle_app/worker/view/worker_theme.dart';
 import 'package:flutter/material.dart';
 
 class WorkerHomePage extends StatefulWidget {
@@ -15,11 +16,9 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: const Color(0xFF3657C8),
+        backgroundColor: workerThemeColor,
         foregroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
@@ -53,7 +52,7 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
           });
         },
         backgroundColor: Colors.white,
-        indicatorColor: colorScheme.primaryContainer,
+        indicatorColor: workerThemeColor.withOpacity(0.18),
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.map_outlined),

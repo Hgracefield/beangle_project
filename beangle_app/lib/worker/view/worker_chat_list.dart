@@ -1,3 +1,4 @@
+import 'package:beangle_app/worker/view/worker_theme.dart';
 import 'package:flutter/material.dart';
 
 class WorkerChatListPage extends StatelessWidget {
@@ -40,7 +41,7 @@ class WorkerChatListPage extends StatelessWidget {
                   Icon(
                     Icons.forum_rounded,
                     size: 56,
-                    color: colorScheme.primary,
+                    color: workerThemeColor,
                   ),
                   const SizedBox(height: 16),
                   Text(
