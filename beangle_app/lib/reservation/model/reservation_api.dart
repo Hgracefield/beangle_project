@@ -42,6 +42,16 @@ class ReservationApi {
   Future<int> insertReservation(ReservationInfo reservation) async {
     print('======');
     print(jsonEncode(reservation.toJson()));
+
+    // final J = {
+    //   //
+    //   "reservation_id": 0,
+    //   "user_id": 111,
+    //   "station_id": 111,
+    //   "time": "2026-03-23",
+    //   "is_cancel": 0,
+    // };
+
     final uri = Uri.parse('$baseUrl/reservation/insert');
     final response = await _client.post(
       //
