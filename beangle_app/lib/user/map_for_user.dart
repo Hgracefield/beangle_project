@@ -16,6 +16,7 @@ class MapForUserPage extends StatefulWidget {
 }
 
 class _MapForUserPageState extends State<MapForUserPage> {
+  // 외부 API/로컬 저장소/예측 자산 경로 상수들.
   static const String _bikeApiKey = '595975485377617236307a746f5179';
   static const String _predictionAssetPath =
       'assets/data/station_hourly_predictions.json';
@@ -26,21 +27,24 @@ class _MapForUserPageState extends State<MapForUserPage> {
   final MapController _mapController = MapController();
   final GetStorage _storage = GetStorage();
 
+  // 지도와 화면 상태.
   late latlong.LatLng _currentPosition;
   List<Marker> _markers = [];
   Set<String> _favoriteStationIds = <String>{};
-  Map<String, Map<int, int>> _reservedCounts = <String, Map<int, int>>{};
+  Map<String, List<DateTime>> _reservedTimes = <String, List<DateTime>>{};
   String? _selectedStationId;
 
+  // UI 토글 상태.
   bool _isDarkTheme = false;
-  bool _isWeatherExpanded = true;
-  bool _isControlPanelExpanded = true;
+  bool _isWeatherExpanded = false;
+  bool _isControlPanelExpanded = false;
   bool _isUsingCurrentWeather = true;
   bool _isWeatherLoading = false;
   bool _isStationLoading = false;
 
   int _selectedForecastHour = 1;
 
+  // 날씨/대여소 상태 문구와 수치.
   String _weatherInfo = '날씨 정보 로딩 중...';
   String _temperature = '--';
   String _humidity = '--';
@@ -50,8 +54,10 @@ class _MapForUserPageState extends State<MapForUserPage> {
   String _stationStatus = '실시간 대수 불러오는 중...';
   String _predictionStatus = '예측 변동량 불러오는 중...';
 
+  // 학습 모델이 생성한 시간대별 예측 자산 전체.
   Map<String, dynamic> _predictionData = const {};
 
+  // 화면에서 관리하는 고정 스테이션 메타데이터.
   final Map<String, Map<String, dynamic>> _stations = {
     'ST-481': {
       'name': '상현',
@@ -98,6 +104,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   @override
   void initState() {
     super.initState();
+    // 첫 진입 시 로컬 상태, 예측 자산, 실시간 대여소, 위치/날씨를 순서대로 준비한다.
     _currentPosition = const latlong.LatLng(37.615, 126.917);
     _hydrateLocalState();
     _loadPredictionData();
@@ -108,6 +115,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   void _hydrateLocalState() {
+    // 즐겨찾기, 다크모드, 예약 시각을 로컬 저장소에서 복구한다.
     final List<dynamic>? favorites = _storage.read<List<dynamic>>(
       _favoriteStorageKey,
     );
@@ -118,28 +126,44 @@ class _MapForUserPageState extends State<MapForUserPage> {
     _favoriteStationIds = (favorites ?? <dynamic>[])
         .map((dynamic id) => id.toString())
         .toSet();
-    _reservedCounts = _decodeReservedCounts(reservations);
+    _reservedTimes = _decodeReservedTimes(reservations);
   }
 
-  Map<String, Map<int, int>> _decodeReservedCounts(Map<dynamic, dynamic>? raw) {
-    final Map<String, Map<int, int>> decoded = <String, Map<int, int>>{};
+  Map<String, List<DateTime>> _decodeReservedTimes(Map<dynamic, dynamic>? raw) {
+    // 예전 offset 저장 형식과 현재 DateTime 저장 형식을 모두 읽을 수 있게 유지한다.
+    final Map<String, List<DateTime>> decoded = <String, List<DateTime>>{};
     if (raw == null) {
       return decoded;
     }
 
-    raw.forEach((dynamic stationId, dynamic offsetMap) {
-      if (offsetMap is! Map) {
+    raw.forEach((dynamic stationId, dynamic value) {
+      final List<DateTime> stationReservations = <DateTime>[];
+
+      if (value is List) {
+        for (final dynamic item in value) {
+          final DateTime? parsed = DateTime.tryParse(item.toString());
+          if (parsed != null && parsed.isAfter(DateTime.now())) {
+            stationReservations.add(parsed);
+          }
+        }
+      } else if (value is Map) {
+        value.forEach((dynamic hour, dynamic count) {
+          final int? parsedHour = int.tryParse(hour.toString());
+          final int? parsedCount = int.tryParse(count.toString());
+          if (parsedHour == null || parsedCount == null || parsedCount <= 0) {
+            return;
+          }
+          for (int i = 0; i < parsedCount; i++) {
+            stationReservations.add(
+              DateTime.now().add(Duration(hours: parsedHour)),
+            );
+          }
+        });
+      } else {
         return;
       }
-      final Map<int, int> stationReservations = <int, int>{};
-      offsetMap.forEach((dynamic hour, dynamic count) {
-        final int? parsedHour = int.tryParse(hour.toString());
-        final int? parsedCount = int.tryParse(count.toString());
-        if (parsedHour == null || parsedCount == null || parsedCount <= 0) {
-          return;
-        }
-        stationReservations[parsedHour] = parsedCount;
-      });
+
+      stationReservations.sort();
       if (stationReservations.isNotEmpty) {
         decoded[stationId.toString()] = stationReservations;
       }
@@ -157,14 +181,16 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   void _persistReservations() {
-    final Map<String, Map<String, int>> encoded = <String, Map<String, int>>{};
-    _reservedCounts.forEach((String stationId, Map<int, int> offsets) {
-      final Map<String, int> filtered = <String, int>{};
-      offsets.forEach((int hour, int count) {
-        if (count > 0) {
-          filtered['$hour'] = count;
-        }
-      });
+    // 지난 예약은 정리하고, 남아 있는 예약만 ISO 문자열로 저장한다.
+    _pruneExpiredReservations();
+    final Map<String, List<String>> encoded = <String, List<String>>{};
+    _reservedTimes.forEach((String stationId, List<DateTime> times) {
+      final List<String> filtered =
+          times
+              .where((DateTime time) => time.isAfter(DateTime.now()))
+              .map((DateTime time) => time.toIso8601String())
+              .toList()
+            ..sort();
       if (filtered.isNotEmpty) {
         encoded[stationId] = filtered;
       }
@@ -172,7 +198,24 @@ class _MapForUserPageState extends State<MapForUserPage> {
     _storage.write(_reservationStorageKey, encoded);
   }
 
+  void _pruneExpiredReservations() {
+    // 현재 시각보다 과거인 예약은 화면/예측 반영에서 제외한다.
+    final DateTime now = DateTime.now();
+    final Map<String, List<DateTime>> next = <String, List<DateTime>>{};
+
+    _reservedTimes.forEach((String stationId, List<DateTime> times) {
+      final List<DateTime> filtered =
+          times.where((DateTime time) => time.isAfter(now)).toList()..sort();
+      if (filtered.isNotEmpty) {
+        next[stationId] = filtered;
+      }
+    });
+
+    _reservedTimes = next;
+  }
+
   Future<void> _getCurrentLocation() async {
+    // 현재 위치를 받아와 지도 중심과 현재 날씨 조회 기준점에 반영한다.
     try {
       final bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
@@ -217,6 +260,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   Future<void> _loadPredictionData() async {
+    // 앱에 포함된 학습 모델 예측 결과 JSON을 읽어 시간대별 예측에 사용한다.
     try {
       final String jsonString = await rootBundle.loadString(
         _predictionAssetPath,
@@ -246,6 +290,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   Future<void> _loadStations() async {
+    // 각 스테이션의 현재 대여 가능 대수를 실시간 API로 갱신한다.
     if (!mounted) {
       return;
     }
@@ -306,6 +351,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   Future<_StationAvailability> _fetchStationAvailability(
     String stationId,
   ) async {
+    // 서울 따릉이 API에서 스테이션 한 곳의 현재 재고 상태를 가져온다.
     final Uri uri = Uri.parse(
       'http://openapi.seoul.go.kr:8088/$_bikeApiKey/json/bikeList/1/1/$stationId',
     );
@@ -350,6 +396,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   List<MapEntry<String, Map<String, dynamic>>> _sortedStationEntries() {
+    // 즐겨찾기 스테이션이 먼저 오고, 그 안에서는 이름순으로 정렬한다.
     final List<MapEntry<String, Map<String, dynamic>>> entries = _stations
         .entries
         .toList();
@@ -368,6 +415,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   void _rebuildMarkers() {
+    // 현재 재고/예측 대수/즐겨찾기 상태를 반영해 지도 마커를 다시 만든다.
     final List<Marker> markers = <Marker>[];
     for (final MapEntry<String, Map<String, dynamic>> entry
         in _sortedStationEntries()) {
@@ -376,8 +424,8 @@ class _MapForUserPageState extends State<MapForUserPage> {
       markers.add(
         Marker(
           point: latlong.LatLng(data['lat'] as double, data['lng'] as double),
-          width: 120,
-          height: 86,
+          width: 136,
+          height: 108,
           child: GestureDetector(
             onTap: () => _showStationDialog(id, data),
             child: _StationMarkerChip(
@@ -412,6 +460,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   Future<void> _fetchWeather() async {
+    // 현재 날씨 또는 선택한 시간대의 예보를 Open-Meteo에서 읽는다.
     final DateTime now = DateTime.now();
     final DateTime targetDateTime = _isUsingCurrentWeather
         ? now
@@ -485,6 +534,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   _WeatherSnapshot _parseCurrentWeather(Map<String, dynamic> data) {
+    // 현재 실황 응답을 화면에서 쓰는 스냅샷 형태로 변환한다.
     final Map<String, dynamic> current =
         data['current'] as Map<String, dynamic>;
     final int weatherCode = (current['weather_code'] as num?)?.toInt() ?? -1;
@@ -502,6 +552,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
     Map<String, dynamic> data,
     DateTime targetDateTime,
   ) {
+    // 선택한 시각과 가장 가까운 시간대 예보를 찾아 스냅샷으로 변환한다.
     final Map<String, dynamic> hourly = data['hourly'] as Map<String, dynamic>;
     final List<dynamic> times = hourly['time'] as List<dynamic>? ?? <dynamic>[];
     final List<dynamic> temperatures =
@@ -606,6 +657,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
     String stationId,
     Map<String, dynamic> data,
   ) {
+    // 현재 재고 + 예측 순증감 - 예약 차감을 합쳐 최종 예측 대수를 계산한다.
     final _ForecastOffsetSummary summary = _getForecastOffsetSummary(
       stationId,
       _selectedForecastHour,
@@ -625,6 +677,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
     String stationId,
     int offsetHour,
   ) {
+    // 현재 시각을 기준으로 N시간 후까지의 누적 inflow/outflow/net_flow를 찾는다.
     final DateTime now = DateTime.now();
     final Map<String, dynamic>? predictionSlot = _lookupPredictionSlot(
       stationId,
@@ -647,6 +700,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
     String stationId,
     DateTime target,
   ) {
+    // 예측 자산은 month -> weekday -> hour 구조라서 현재 시각 슬롯을 그 경로로 조회한다.
     final Map<String, dynamic>? stationMap =
         _predictionData[stationId] as Map<String, dynamic>?;
     final Map<String, dynamic>? slotMap =
@@ -659,18 +713,20 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   int _cumulativeReservedCount(String stationId, int hour) {
-    final Map<int, int> stationReservations =
-        _reservedCounts[stationId] ?? <int, int>{};
-    int total = 0;
-    stationReservations.forEach((int offset, int count) {
-      if (offset <= hour) {
-        total += count;
-      }
-    });
-    return total;
+    // 예측 시점 이전까지 잡혀 있는 예약 수를 세어 예측 대수 차감에 반영한다.
+    _pruneExpiredReservations();
+    final List<DateTime> stationReservations =
+        _reservedTimes[stationId] ?? <DateTime>[];
+    final DateTime now = DateTime.now();
+    final DateTime targetTime = now.add(Duration(hours: hour));
+    return stationReservations.where((DateTime reservationTime) {
+      return reservationTime.isAfter(now) &&
+          !reservationTime.isAfter(targetTime);
+    }).length;
   }
 
   void _toggleFavorite(String stationId) {
+    // 즐겨찾기 토글 후 로컬 저장소와 마커 정렬을 갱신한다.
     setState(() {
       if (_favoriteStationIds.contains(stationId)) {
         _favoriteStationIds.remove(stationId);
@@ -694,6 +750,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   void _focusStation(String stationId) {
+    // 특정 스테이션으로 지도를 이동시키고 선택 상태를 강조한다.
     final Map<String, dynamic>? station = _stations[stationId];
     if (station == null) {
       return;
@@ -710,6 +767,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   void _reserveSelectedStation() {
+    // 현재 선택한 스테이션을 선택한 시간대 기준으로 실제 예약 시각으로 저장한다.
     final String? stationId = _selectedStationId;
     if (stationId == null) {
       ScaffoldMessenger.of(
@@ -723,6 +781,29 @@ class _MapForUserPageState extends State<MapForUserPage> {
       return;
     }
 
+    final DateTime targetReservationTime = DateTime.now().add(
+      Duration(hours: _selectedForecastHour),
+    );
+    final DateTime normalizedTargetReservationTime = DateTime(
+      targetReservationTime.year,
+      targetReservationTime.month,
+      targetReservationTime.day,
+      targetReservationTime.hour,
+      targetReservationTime.minute,
+    );
+
+    final bool alreadyReserved = (_reservedTimes[stationId] ?? <DateTime>[])
+        .any(
+          (DateTime value) =>
+              value.isAtSameMomentAs(normalizedTargetReservationTime),
+        );
+    if (alreadyReserved) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('같은 스테이션은 같은 예약 시각에 1대만 예약할 수 있습니다.')),
+      );
+      return;
+    }
+
     final int predicted = _calculatePredictedAvailability(stationId, station);
     if (predicted <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -732,12 +813,12 @@ class _MapForUserPageState extends State<MapForUserPage> {
     }
 
     setState(() {
-      final Map<int, int> stationReservations = _reservedCounts.putIfAbsent(
+      final List<DateTime> stationReservations = _reservedTimes.putIfAbsent(
         stationId,
-        () => <int, int>{},
+        () => <DateTime>[],
       );
-      stationReservations[_selectedForecastHour] =
-          (stationReservations[_selectedForecastHour] ?? 0) + 1;
+      stationReservations.add(normalizedTargetReservationTime);
+      stationReservations.sort();
     });
     _persistReservations();
     _rebuildMarkers();
@@ -745,33 +826,190 @@ class _MapForUserPageState extends State<MapForUserPage> {
     final String stationName = station['name'] as String;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('$stationName 예약 완료: $_selectedForecastHour시간 후 1대'),
+        content: Text(
+          '$stationName 예약 완료: ${_formatDateTime(normalizedTargetReservationTime)}',
+        ),
       ),
     );
   }
 
-  void _clearReservation(String stationId, int hour) {
-    final Map<int, int>? stationReservations = _reservedCounts[stationId];
+  void _clearReservation(String stationId, DateTime targetTime) {
+    // 예약 목록/상세보기에서 선택한 특정 예약 시각 한 건만 제거한다.
+    final List<DateTime>? stationReservations = _reservedTimes[stationId];
     if (stationReservations == null) {
       return;
     }
 
     setState(() {
-      final int next = (stationReservations[hour] ?? 0) - 1;
-      if (next > 0) {
-        stationReservations[hour] = next;
-      } else {
-        stationReservations.remove(hour);
-      }
+      stationReservations.removeWhere(
+        (DateTime value) => value.isAtSameMomentAs(targetTime),
+      );
       if (stationReservations.isEmpty) {
-        _reservedCounts.remove(stationId);
+        _reservedTimes.remove(stationId);
       }
     });
     _persistReservations();
     _rebuildMarkers();
   }
 
+  void _clearReservationsUpToHour(String stationId, int hour) {
+    // 상세보기에서는 'N시간 후' 예측 구간 안에 포함되는 가장 가까운 예약 한 건을 취소한다.
+    final List<DateTime>? stationReservations = _reservedTimes[stationId];
+    if (stationReservations == null || stationReservations.isEmpty) {
+      return;
+    }
+
+    final DateTime now = DateTime.now();
+    final DateTime targetTime = now.add(Duration(hours: hour));
+
+    final List<DateTime> matchingReservations =
+        stationReservations
+            .where(
+              (DateTime value) =>
+                  value.isAfter(now) && !value.isAfter(targetTime),
+            )
+            .toList()
+          ..sort();
+
+    if (matchingReservations.isEmpty) {
+      return;
+    }
+
+    _clearReservation(stationId, matchingReservations.first);
+  }
+
+  List<_ReservationListItem> _buildReservationItems() {
+    // 드로어 예약 목록에 표시할 화면용 데이터로 변환한다.
+    _pruneExpiredReservations();
+    final List<_ReservationListItem> items = <_ReservationListItem>[];
+
+    _reservedTimes.forEach((String stationId, List<DateTime> times) {
+      final Map<String, dynamic>? station = _stations[stationId];
+      final String stationName = station?['name'] as String? ?? stationId;
+
+      for (final DateTime targetTime in times) {
+        final DateTime now = DateTime.now();
+        final Duration remaining = targetTime.difference(now);
+        final String scheduleLabel = remaining.isNegative
+            ? '지난 예약'
+            : '${remaining.inHours}시간 ${remaining.inMinutes.remainder(60)}분 후';
+        items.add(
+          _ReservationListItem(
+            stationId: stationId,
+            stationName: stationName,
+            targetTime: targetTime,
+            scheduleLabel: scheduleLabel,
+          ),
+        );
+      }
+    });
+
+    items.sort((_ReservationListItem a, _ReservationListItem b) {
+      return a.targetTime.compareTo(b.targetTime);
+    });
+
+    return items;
+  }
+
+  void _showReservationList() {
+    // 드로어에서 열리는 간단한 예약 목록 바텀시트.
+    final List<_ReservationListItem> reservations = _buildReservationItems();
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: _panelColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.event_note, color: _cardAccent),
+                    const SizedBox(width: 8),
+                    Text(
+                      '예약 목록',
+                      style: TextStyle(
+                        color: _primaryTextColor,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                if (reservations.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      '저장된 예약이 없습니다.',
+                      style: TextStyle(color: _secondaryTextColor),
+                    ),
+                  )
+                else
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: reservations.length,
+                      separatorBuilder: (_, _) => Divider(
+                        color: _secondaryTextColor.withValues(alpha: 0.25),
+                      ),
+                      itemBuilder: (BuildContext context, int index) {
+                        final _ReservationListItem item = reservations[index];
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: _cardAccent.withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            alignment: Alignment.center,
+                            child: Icon(Icons.pedal_bike, color: _cardAccent),
+                          ),
+                          title: Text(
+                            item.stationName,
+                            style: TextStyle(
+                              color: _primaryTextColor,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          subtitle: Text(
+                            '${_formatDateTime(item.targetTime)} · ${item.scheduleLabel}',
+                            style: TextStyle(color: _secondaryTextColor),
+                          ),
+                          trailing: IconButton(
+                            tooltip: '예약 취소',
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                              _clearReservation(
+                                item.stationId,
+                                item.targetTime,
+                              );
+                            },
+                            icon: Icon(Icons.close, color: _secondaryTextColor),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   void _showStationDialog(String id, Map<String, dynamic> data) {
+    // 마커를 눌렀을 때 현재/예측/예약 반영 상태를 한 번에 보여주는 상세 다이얼로그.
     final _ForecastOffsetSummary forecastSummary = _getForecastOffsetSummary(
       id,
       _selectedForecastHour,
@@ -783,8 +1021,10 @@ class _MapForUserPageState extends State<MapForUserPage> {
     final DateTime target =
         forecastSummary.targetTime ??
         now.add(Duration(hours: _selectedForecastHour));
-    final int reservedCount =
-        (_reservedCounts[id]?[_selectedForecastHour] ?? 0);
+    final int reservedCount = _cumulativeReservedCount(
+      id,
+      _selectedForecastHour,
+    );
 
     setState(() {
       _selectedStationId = id;
@@ -926,7 +1166,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
                 TextButton(
                   onPressed: () {
                     Navigator.of(context).pop();
-                    _clearReservation(id, _selectedForecastHour);
+                    _clearReservationsUpToHour(id, _selectedForecastHour);
                   },
                   child: const Text('예약 취소'),
                 ),
@@ -942,6 +1182,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   void _selectForecastHour(int? hour) {
+    // 오른쪽 패널의 시간 선택값을 바꾸면 예보와 예측 대수가 함께 갱신된다.
     if (hour == null) {
       return;
     }
@@ -954,6 +1195,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   void _resetToCurrentWeather() {
+    // 현재 날씨 모드로 복귀한다.
     setState(() {
       _isUsingCurrentWeather = true;
     });
@@ -961,6 +1203,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
   }
 
   void _fitMarkersOnMap() {
+    // 모든 스테이션이 보이도록 지도 중심과 줌을 초기 상태로 맞춘다.
     if (_stations.isEmpty) {
       return;
     }
@@ -992,6 +1235,15 @@ class _MapForUserPageState extends State<MapForUserPage> {
       _currentPosition = latlong.LatLng(centerLat, centerLng);
     });
     _mapController.move(_currentPosition, 12.5);
+  }
+
+  void _resetMapToInitialView() {
+    // 선택 상태를 해제하고 전체 스테이션이 보이는 기본 지도 화면으로 돌아간다.
+    setState(() {
+      _selectedStationId = null;
+    });
+    _fitMarkersOnMap();
+    _rebuildMarkers();
   }
 
   String _formatDateTime(DateTime value) {
@@ -1027,6 +1279,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
 
   @override
   Widget build(BuildContext context) {
+    // 화면 전체는 지도 위에 날씨 카드, 예측 패널, 선택 스테이션 카드, 예약 버튼을 올리는 구조다.
     final DateTime now = DateTime.now();
     final DateTime selectedForecastTime = now.add(
       Duration(hours: _selectedForecastHour),
@@ -1034,6 +1287,8 @@ class _MapForUserPageState extends State<MapForUserPage> {
     final String? selectedStationName = _selectedStationId == null
         ? null
         : _stations[_selectedStationId]?['name'] as String?;
+    final List<_ReservationListItem> reservationItems =
+        _buildReservationItems();
 
     return Theme(
       data: Theme.of(context).copyWith(
@@ -1046,11 +1301,13 @@ class _MapForUserPageState extends State<MapForUserPage> {
       ),
       child: Scaffold(
         appBar: AppBar(
+          centerTitle: true,
           backgroundColor: _cardAccent,
           foregroundColor: Colors.white,
-          title: const Text(
-            '은평 따릉이 예약',
-            style: TextStyle(fontWeight: FontWeight.bold),
+          title: Row(
+            children: [
+              const Text('빙글', style: TextStyle(fontWeight: FontWeight.bold)),
+            ],
           ),
           elevation: 0,
           actions: [
@@ -1085,6 +1342,36 @@ class _MapForUserPageState extends State<MapForUserPage> {
                     _persistTheme();
                   },
                 ),
+              ),
+              ListTile(
+                leading: Icon(Icons.event_note, color: _primaryTextColor),
+                title: Text(
+                  '예약 목록',
+                  style: TextStyle(color: _primaryTextColor),
+                ),
+                trailing: reservationItems.isEmpty
+                    ? null
+                    : Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _inputFillColor,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          '${reservationItems.length}',
+                          style: TextStyle(
+                            color: _primaryTextColor,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _showReservationList();
+                },
               ),
               if (_favoriteStationIds.isNotEmpty)
                 Padding(
@@ -1526,6 +1813,36 @@ class _MapForUserPageState extends State<MapForUserPage> {
               ),
             ),
             Positioned(
+              right: 16,
+              bottom: 180,
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: _resetMapToInitialView,
+                  borderRadius: BorderRadius.circular(18),
+                  child: Ink(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: _panelColor.withValues(alpha: 0.96),
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.14),
+                          blurRadius: 12,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                      border: Border.all(
+                        color: _cardAccent.withValues(alpha: 0.18),
+                      ),
+                    ),
+                    child: Icon(Icons.home_rounded, color: _cardAccent),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
               bottom: 16,
               left: 16,
               right: 16,
@@ -1594,6 +1911,20 @@ class _ForecastOffsetSummary {
   final double outflow;
   final double netFlow;
   final DateTime? targetTime;
+}
+
+class _ReservationListItem {
+  const _ReservationListItem({
+    required this.stationId,
+    required this.stationName,
+    required this.targetTime,
+    required this.scheduleLabel,
+  });
+
+  final String stationId;
+  final String stationName;
+  final DateTime targetTime;
+  final String scheduleLabel;
 }
 
 class _StationMarkerChip extends StatelessWidget {
