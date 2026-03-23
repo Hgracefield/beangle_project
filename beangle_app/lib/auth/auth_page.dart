@@ -243,7 +243,7 @@ class _AuthPageState extends State<AuthPage> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.directions_bike, size: 60, color: Color(0xFF2E7D32)),
+              Icon(Icons.directions_bike, size: 60, color: Color(0xFF49992E)),
               SizedBox(height: 10),
               Text("빙글", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
 

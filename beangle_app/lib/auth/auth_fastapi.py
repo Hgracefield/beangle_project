@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 import mysql.connector
 from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
 
 app = FastAPI()
 
@@ -14,10 +15,12 @@ app.add_middleware(
 )
 
 db = mysql.connector.connect(
-    host="localhost",
+    host="127.0.0.1",
     user="root",
-    password="qwer1234",
-    database="beangle_app"
+    password="Qwer1234!",
+    database="cycle-predict",
+    port=3307,
+    auth_plugin='mysql_native_password' 
 )
 
 cursor = db.cursor()
@@ -37,7 +40,7 @@ class GoogleAuthFastAPI(BaseModel):
 def signup(req: AuthFastAPI):
 
     query = """
-    INSERT INTO users (user_name, user_email, user_password, user_phone)
+    INSERT INTO user (user_name, user_email, user_password, user_phone)
     VALUES (%s, %s, %s, %s)
     """
 
@@ -49,7 +52,7 @@ def signup(req: AuthFastAPI):
 @app.post("/login")
 def login(req: AuthFastAPI):
 
-    query = "SELECT * FROM users WHERE user_email=%s AND user_password=%s"
+    query = "SELECT * FROM user WHERE user_email=%s AND user_password=%s"
     cursor.execute(query, (req.email, req.password))
     user = cursor.fetchone()
 
@@ -62,7 +65,7 @@ def login(req: AuthFastAPI):
 def google_login(req: GoogleAuthFastAPI):
     # TODO: Verify req.idToken with Google before trusting it.
     try:
-        query = "SELECT * FROM users WHERE user_email=%s"
+        query = "SELECT * FROM user WHERE user_email=%s"
         cursor.execute(query, (req.email,))
         user = cursor.fetchone()
 
@@ -70,7 +73,7 @@ def google_login(req: GoogleAuthFastAPI):
             return {"success": True, "created": False, "user_id": user[0]}
 
         insert_query = """
-        INSERT INTO users (user_name, user_email, user_password, user_phone)
+        INSERT INTO user (user_name, user_email, user_password, user_phone)
         VALUES (%s, %s, %s, %s)
         """
         name = req.name or "GoogleUser"
@@ -80,3 +83,7 @@ def google_login(req: GoogleAuthFastAPI):
     except Exception as e:
         print("google_login error:", e)
         return {"success": False, "error": str(e)}
+
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
