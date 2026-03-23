@@ -793,100 +793,151 @@ class _MapForUserPageState extends State<MapForUserPage> {
 
     showDialog<void>(
       context: context,
-      builder: (BuildContext context) => AlertDialog(
-        backgroundColor: _panelColor,
-        title: Row(
-          children: [
-            Expanded(
-              child: Text(
-                data['name'] as String,
-                style: TextStyle(color: _primaryTextColor),
+      builder: (BuildContext context) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            brightness: _isDarkTheme ? Brightness.dark : Brightness.light,
+            dialogTheme: DialogThemeData(backgroundColor: _panelColor),
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(
+                foregroundColor: _cardAccent,
+                textStyle: const TextStyle(fontWeight: FontWeight.w700),
               ),
             ),
-            IconButton(
-              onPressed: () => _toggleFavorite(id),
-              icon: Icon(
-                _favoriteStationIds.contains(id)
-                    ? Icons.star
-                    : Icons.star_border,
-                color: _favoriteStationIds.contains(id)
-                    ? const Color(0xFFFFC94A)
-                    : _secondaryTextColor,
-              ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+          ),
+          child: AlertDialog(
+            backgroundColor: _panelColor,
+            title: Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: _cardAccent.withValues(alpha: 0.16),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(Icons.pedal_bike, color: _cardAccent, size: 32),
-                ),
-                const SizedBox(width: 12),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _InfoLine(
-                        label: '현재',
-                        value: '$currentAvailable대',
-                        valueColor: _primaryTextColor,
-                      ),
-                      _InfoLine(
-                        label: '예측',
-                        value:
-                            '$predictedAvailable대 (${predictedDelta >= 0 ? '+' : ''}$predictedDelta)',
-                        valueColor: _cardAccent,
-                      ),
-                    ],
+                  child: Text(
+                    data['name'] as String,
+                    style: TextStyle(color: _primaryTextColor),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => _toggleFavorite(id),
+                  icon: Icon(
+                    _favoriteStationIds.contains(id)
+                        ? Icons.star
+                        : Icons.star_border,
+                    color: _favoriteStationIds.contains(id)
+                        ? const Color(0xFFFFC94A)
+                        : _secondaryTextColor,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 14),
-            _InfoLine(
-              label: '예측 유입량',
-              value: '${forecastSummary.inflow.toStringAsFixed(1)}대',
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: _cardAccent.withValues(alpha: 0.16),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.pedal_bike,
+                        color: _cardAccent,
+                        size: 32,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _InfoLine(
+                            label: '현재',
+                            value: '$currentAvailable대',
+                            labelColor: _labelTextColor,
+                            valueColor: _primaryTextColor,
+                          ),
+                          _InfoLine(
+                            label: '예측',
+                            value:
+                                '$predictedAvailable대 (${predictedDelta >= 0 ? '+' : ''}$predictedDelta)',
+                            labelColor: _labelTextColor,
+                            valueColor: _cardAccent,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                _InfoLine(
+                  label: '예측 유입량',
+                  value: '${forecastSummary.inflow.toStringAsFixed(1)}대',
+                  labelColor: _labelTextColor,
+                  valueColor: _primaryTextColor,
+                ),
+                _InfoLine(
+                  label: '예측 유출량',
+                  value: '${forecastSummary.outflow.toStringAsFixed(1)}대',
+                  labelColor: _labelTextColor,
+                  valueColor: _primaryTextColor,
+                ),
+                _InfoLine(
+                  label: '예측 순증감',
+                  value: '${forecastSummary.netFlow.toStringAsFixed(1)}대',
+                  labelColor: _labelTextColor,
+                  valueColor: _primaryTextColor,
+                ),
+                _InfoLine(
+                  label: '예약 반영',
+                  value: '$reservedCount대',
+                  labelColor: _labelTextColor,
+                  valueColor: _primaryTextColor,
+                ),
+                _InfoLine(
+                  label: '거치 가능',
+                  value: '${data['parking']}대',
+                  labelColor: _labelTextColor,
+                  valueColor: _primaryTextColor,
+                ),
+                const SizedBox(height: 10),
+                _InfoLine(
+                  label: '현재시간',
+                  value: _formatDateTime(now),
+                  labelColor: _labelTextColor,
+                  valueColor: _primaryTextColor,
+                ),
+                _InfoLine(
+                  label: '예측시각',
+                  value: _formatDateTime(target),
+                  labelColor: _labelTextColor,
+                  valueColor: _primaryTextColor,
+                ),
+                _InfoLine(
+                  label: '대여소 번호',
+                  value: '${data['number'] ?? '-'}',
+                  labelColor: _labelTextColor,
+                  valueColor: _primaryTextColor,
+                ),
+              ],
             ),
-            _InfoLine(
-              label: '예측 유출량',
-              value: '${forecastSummary.outflow.toStringAsFixed(1)}대',
-            ),
-            _InfoLine(
-              label: '예측 순증감',
-              value: '${forecastSummary.netFlow.toStringAsFixed(1)}대',
-            ),
-            _InfoLine(label: '예약 반영', value: '$reservedCount대'),
-            _InfoLine(label: '거치 가능', value: '${data['parking']}대'),
-            const SizedBox(height: 10),
-            _InfoLine(label: '현재시간', value: _formatDateTime(now)),
-            _InfoLine(label: '예측시각', value: _formatDateTime(target)),
-            _InfoLine(label: '대여소 번호', value: '${data['number'] ?? '-'}'),
-          ],
-        ),
-        actions: [
-          if (reservedCount > 0)
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                _clearReservation(id, _selectedForecastHour);
-              },
-              child: const Text('예약 취소'),
-            ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('닫기'),
+            actions: [
+              if (reservedCount > 0)
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    _clearReservation(id, _selectedForecastHour);
+                  },
+                  child: const Text('예약 취소'),
+                ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('닫기'),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -968,6 +1019,12 @@ class _MapForUserPageState extends State<MapForUserPage> {
 
   Color get _cardAccent => const Color(0xFF49992E);
 
+  Color get _labelTextColor =>
+      _isDarkTheme ? const Color(0xFFC4D3C5) : const Color(0xFF6C7570);
+
+  Color get _inputFillColor =>
+      _isDarkTheme ? const Color(0xFF314437) : const Color(0xFFEEF5E9);
+
   @override
   Widget build(BuildContext context) {
     final DateTime now = DateTime.now();
@@ -980,6 +1037,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
 
     return Theme(
       data: Theme.of(context).copyWith(
+        brightness: _isDarkTheme ? Brightness.dark : Brightness.light,
         scaffoldBackgroundColor: _backgroundColor,
         snackBarTheme: SnackBarThemeData(
           backgroundColor: _panelColor,
@@ -1148,26 +1206,36 @@ class _MapForUserPageState extends State<MapForUserPage> {
                             label: '온도',
                             value: _temperature,
                             accent: _cardAccent,
+                            labelColor: _labelTextColor,
+                            backgroundColor: _inputFillColor,
                           ),
                           _MetricChip(
                             label: '습도',
                             value: _humidity,
                             accent: _cardAccent,
+                            labelColor: _labelTextColor,
+                            backgroundColor: _inputFillColor,
                           ),
                           _MetricChip(
                             label: '강수량',
                             value: _precipitation,
                             accent: _cardAccent,
+                            labelColor: _labelTextColor,
+                            backgroundColor: _inputFillColor,
                           ),
                           _MetricChip(
                             label: '적설량',
                             value: _snowfall,
                             accent: _cardAccent,
+                            labelColor: _labelTextColor,
+                            backgroundColor: _inputFillColor,
                           ),
                           _MetricChip(
                             label: '불쾌지수',
                             value: _discomfortIndex,
                             accent: _cardAccent,
+                            labelColor: _labelTextColor,
+                            backgroundColor: _inputFillColor,
                           ),
                         ],
                       ),
@@ -1181,9 +1249,9 @@ class _MapForUserPageState extends State<MapForUserPage> {
               right: 14,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 220),
-                width: _isControlPanelExpanded ? 208 : 64,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
+                width: _isControlPanelExpanded ? 208 : 56,
+                padding: EdgeInsets.symmetric(
+                  horizontal: _isControlPanelExpanded ? 10 : 6,
                   vertical: 8,
                 ),
                 decoration: BoxDecoration(
@@ -1198,12 +1266,14 @@ class _MapForUserPageState extends State<MapForUserPage> {
                   ],
                 ),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: _isControlPanelExpanded
+                      ? CrossAxisAlignment.start
+                      : CrossAxisAlignment.center,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Row(
-                      children: [
-                        if (_isControlPanelExpanded)
+                    if (_isControlPanelExpanded)
+                      Row(
+                        children: [
                           Expanded(
                             child: Text(
                               '예측 설정',
@@ -1213,23 +1283,49 @@ class _MapForUserPageState extends State<MapForUserPage> {
                               ),
                             ),
                           ),
-                        IconButton(
-                          onPressed: () {
+                          IconButton(
+                            onPressed: () {
+                              setState(() {
+                                _isControlPanelExpanded =
+                                    !_isControlPanelExpanded;
+                              });
+                            },
+                            icon: Icon(
+                              Icons.keyboard_arrow_right,
+                              color: _cardAccent,
+                            ),
+                            splashRadius: 18,
+                          ),
+                        ],
+                      )
+                    else
+                      Tooltip(
+                        message: '예측 설정 펼치기',
+                        child: InkWell(
+                          onTap: () {
                             setState(() {
-                              _isControlPanelExpanded =
-                                  !_isControlPanelExpanded;
+                              _isControlPanelExpanded = true;
                             });
                           },
-                          icon: Icon(
-                            _isControlPanelExpanded
-                                ? Icons.keyboard_arrow_right
-                                : Icons.keyboard_arrow_left,
-                            color: _cardAccent,
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: _weatherCardColor.withValues(alpha: 0.78),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: _cardAccent.withValues(alpha: 0.35),
+                              ),
+                            ),
+                            alignment: Alignment.center,
+                            child: Icon(
+                              Icons.keyboard_arrow_left,
+                              color: _cardAccent,
+                            ),
                           ),
-                          splashRadius: 18,
                         ),
-                      ],
-                    ),
+                      ),
                     if (_isControlPanelExpanded) ...[
                       TextButton.icon(
                         onPressed: _isWeatherLoading
@@ -1252,7 +1348,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
                           vertical: 8,
                         ),
                         decoration: BoxDecoration(
-                          color: _weatherCardColor.withValues(alpha: 0.70),
+                          color: _inputFillColor,
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Row(
@@ -1277,11 +1373,17 @@ class _MapForUserPageState extends State<MapForUserPage> {
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(horizontal: 8),
                         decoration: BoxDecoration(
-                          color: _weatherCardColor,
+                          color: _inputFillColor,
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: DropdownButton<int>(
                           value: _selectedForecastHour,
+                          dropdownColor: _panelColor,
+                          style: TextStyle(
+                            color: _primaryTextColor,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
                           items: List<DropdownMenuItem<int>>.generate(8, (
                             int index,
                           ) {
@@ -1304,6 +1406,8 @@ class _MapForUserPageState extends State<MapForUserPage> {
                           isExpanded: true,
                           underline: const SizedBox(),
                           iconEnabledColor: _cardAccent,
+                          iconDisabledColor: _secondaryTextColor,
+                          borderRadius: BorderRadius.circular(10),
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -1338,12 +1442,16 @@ class _MapForUserPageState extends State<MapForUserPage> {
                             }
                             return ActionChip(
                               onPressed: () => _focusStation(stationId),
+                              backgroundColor: _inputFillColor,
                               avatar: const Icon(
                                 Icons.star,
                                 size: 14,
                                 color: Color(0xFFFFC94A),
                               ),
-                              label: Text(station['name'] as String),
+                              label: Text(
+                                station['name'] as String,
+                                style: TextStyle(color: _primaryTextColor),
+                              ),
                             );
                           }).toList(),
                         ),
@@ -1578,24 +1686,28 @@ class _MetricChip extends StatelessWidget {
     required this.label,
     required this.value,
     required this.accent,
+    required this.labelColor,
+    required this.backgroundColor,
   });
 
   final String label;
   final String value;
   final Color accent;
+  final Color labelColor;
+  final Color backgroundColor;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.82),
+        color: backgroundColor,
         borderRadius: BorderRadius.circular(10),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+          Text(label, style: TextStyle(fontSize: 11, color: labelColor)),
           const SizedBox(height: 2),
           Text(
             value,
@@ -1612,14 +1724,28 @@ class _MetricChip extends StatelessWidget {
 }
 
 class _InfoLine extends StatelessWidget {
-  const _InfoLine({required this.label, required this.value, this.valueColor});
+  const _InfoLine({
+    required this.label,
+    required this.value,
+    this.labelColor,
+    this.valueColor,
+  });
 
   final String label;
   final String value;
+  final Color? labelColor;
   final Color? valueColor;
 
   @override
   Widget build(BuildContext context) {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final Color resolvedLabelColor =
+        labelColor ??
+        (isDark ? const Color(0xFFC4D3C5) : const Color(0xFF6C7570));
+    final Color resolvedValueColor =
+        valueColor ??
+        (isDark ? const Color(0xFFF4F7F1) : const Color(0xFF18341D));
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Row(
@@ -1628,7 +1754,7 @@ class _InfoLine extends StatelessWidget {
             width: 72,
             child: Text(
               label,
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
+              style: TextStyle(fontSize: 12, color: resolvedLabelColor),
             ),
           ),
           Expanded(
@@ -1637,7 +1763,7 @@ class _InfoLine extends StatelessWidget {
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
-                color: valueColor,
+                color: resolvedValueColor,
               ),
             ),
           ),
