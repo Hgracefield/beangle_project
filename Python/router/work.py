@@ -30,15 +30,32 @@ async def insert(work: WorkState):
     conn = connect()
     curs = conn.cursor()
     try:
+        duplicate_sql = """
+        select count(*)
+        from work
+        where station_id = %s
+          and time = %s
+        """
+        curs.execute(duplicate_sql, (
+            work.station_id,
+            work.time
+        ))
+        duplicate_count = curs.fetchone()[0]
+
+        if duplicate_count > 0:
+            conn.rollback()
+            return {'result': 'DUPLICATE'}
+
         sql = """
         insert into work
         (worker_id, station_id, count, time)
-        values (%s, %s, %s, now())
+        values (%s, %s, %s, %s)
         """
         curs.execute(sql, (
             work.worker_id,
             work.station_id,
-            work.count
+            work.count,
+            work.time
         ))
         conn.commit()
         return {'result': 'OK'}

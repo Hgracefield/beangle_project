@@ -1,11 +1,13 @@
 
 import 'package:beangle_app/auth/custom_textfield.dart';
 import 'package:beangle_app/auth/primaryButton.dart';
-import 'package:beangle_app/worker/view/worker_home.dart';
+import 'package:beangle_app/worker/view/map_for_worker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:get/get.dart';
+import 'package:get_storage/get_storage.dart';
 
 class WorkerLogin extends StatefulWidget {
   const WorkerLogin({super.key});
@@ -15,10 +17,18 @@ class WorkerLogin extends StatefulWidget {
 }
 
 class _WorkerLoginState extends State<WorkerLogin> {
-
-  final String url = 'http://127.0.0.1:8000/worker';
+  final GetStorage _storage = GetStorage();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+
+  String get _workerApiBaseUrl {
+    if (kIsWeb ||
+        defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.macOS) {
+      return 'http://127.0.0.1:8000';
+    }
+    return 'http://10.0.2.2:8000';
+  }
 
   @override
   void initState() {
@@ -60,10 +70,9 @@ class _WorkerLoginState extends State<WorkerLogin> {
       "email": _emailController.text.trim(),
       "password": _passwordController.text
     };
-
     try {
       final response = await http.post(
-        Uri.parse("$url/login"),
+        Uri.parse("$_workerApiBaseUrl/worker/login"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode(payload),
       );
@@ -74,17 +83,29 @@ class _WorkerLoginState extends State<WorkerLogin> {
 
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body);
-        final success = body is Map<String, dynamic> && body["success"] == true;
+        final List<dynamic> results =
+            body is Map<String, dynamic> && body["results"] is List<dynamic>
+                ? body["results"] as List<dynamic>
+                : <dynamic>[];
+        final success =
+            body is Map<String, dynamic> &&
+            body["success"] == true &&
+            results.isNotEmpty;
 
-        print(body);
         if (success) {
+          final Map<String, dynamic> workerInfo =
+              results.first as Map<String, dynamic>;
+          final dynamic workerId = workerInfo['worker_id'];
+          if (workerId != null) {
+            await _storage.write('worker_id', workerId);
+          }
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text("로그인 성공!")),
           );
           if (!mounted) {
             return;
           }
-          Get.to(WorkerHomePage());
+          Get.to(MapForWorkerPage());
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text("이메일 또는 비밀번호가 올바르지 않아요.")),
@@ -95,7 +116,8 @@ class _WorkerLoginState extends State<WorkerLogin> {
           SnackBar(content: Text("로그인에 실패했어요. (${response.statusCode})")),
         );
       }
-    } catch (_) {
+    } catch (error) {
+      debugPrint('worker login error: $error');
       if (!mounted) {
         return;
       }
