@@ -28,6 +28,15 @@ class _AuthPageState extends State<AuthPage> {
   final GetStorage _storage = GetStorage();
   StreamSubscription? _googleAuthSub;
 
+  String get _authApiBaseUrl {
+    if (kIsWeb ||
+        defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.macOS) {
+      return 'http://127.0.0.1:8000';
+    }
+    return 'http://10.0.2.2:8000';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -88,7 +97,7 @@ class _AuthPageState extends State<AuthPage> {
 
     try {
       final response = await http.post(
-        Uri.parse("http://127.0.0.1:8000/auth/login"),
+        Uri.parse("$_authApiBaseUrl/auth/login"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode(payload),
       );
@@ -138,7 +147,7 @@ class _AuthPageState extends State<AuthPage> {
 
     try {
       final response = await http.post(
-        Uri.parse("http://localhost:8000/auth/google_login"),
+        Uri.parse("$_authApiBaseUrl/auth/google_login"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode(payload),
       );
