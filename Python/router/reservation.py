@@ -51,7 +51,7 @@ async def get(id:int):
     curs = conn.cursor()
 
     sql = 'select * from reservation where user_id=%s order by reservation_id desc' # (%s,%s,%s,%s)'
-    curs.execute(sql,[])
+    curs.execute(sql,[id])
     rows = curs.fetchall()
     
     conn.close()
@@ -113,6 +113,7 @@ async def insert(data: List[ReservationModel]):
 async def insert(data: ReservationModel):
   
   print('=== Insert Reservation ===')
+  conn = None
   try:
     conn = connect()
     curs = conn.cursor()
@@ -120,16 +121,21 @@ async def insert(data: ReservationModel):
     sql = 'INSERT INTO reservation(user_id, station_id, `time`, is_cancel) values(%s,%s,%s,%s)'
     curs.execute(sql,[data.user_id, data.station_id, data.time, data.is_cancel])
     conn.commit()
-    conn.close()
 
     return {'result':1}
   except Exception as err:
+    if conn is not None:
+      conn.rollback()
     print('ERROR(INSERT): ')
     print(err)
     return {'result':0}
+  finally:
+    if conn is not None:
+      conn.close()
 
 @router.post('/update')
 async def update(data: ReservationModel):
+    conn = None
     try:
         print('=== update Reservation ===')
         conn = connect()
@@ -138,26 +144,35 @@ async def update(data: ReservationModel):
         sql = 'update reservation set station_id=%s, time=%s, is_cancel=%s where reservation_id=%s'
         curs.execute(sql,[data.station_id, data.time, data.is_cancel,data.reservation_id])
         conn.commit()
-        conn.close()
         return {'result':1}
     except Exception as err:
+       if conn is not None:
+         conn.rollback()
        print('=== ERROR(UPDATE): ')
        print(err)
        return {'result':0}
+    finally:
+       if conn is not None:
+         conn.close()
 
 @router.post('/delete')
 async def delete(data: ReservationModel):
+    conn = None
     try:
         print('=== delete Reservation ===')
         conn = connect()
         curs = conn.cursor()
 
-        sql = 'delete from reservation where reservation_id=%s and user_id=%s'
-        curs.execute(sql,[data.reservation_id,data.user_id])
+        sql = 'update reservation set is_cancel=%s where reservation_id=%s and user_id=%s'
+        curs.execute(sql,[1, data.reservation_id, data.user_id])
         conn.commit()
-        conn.close()
         return {'result':1}
     except Exception as err:
+       if conn is not None:
+         conn.rollback()
        print('=== ERROR(DELETE): ')
        print(err)
        return {'result':0}
+    finally:
+       if conn is not None:
+         conn.close()

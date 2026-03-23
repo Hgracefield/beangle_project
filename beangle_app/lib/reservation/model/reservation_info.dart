@@ -25,12 +25,13 @@ class ReservationInfo {
   //
 
   factory ReservationInfo.fromJson(Map<String, dynamic> json) {
+    final String rawTime = json['time']?.toString() ?? '';
     return ReservationInfo(
       //
       reservation_id: json['reservation_id'] as int? ?? 0,
       user_id: json['user_id'] as int? ?? 0,
       station_id: json['station_id'] as int? ?? 0,
-      time: DateTime.parse(json['time']) as DateTime? ?? DateTime.now(),
+      time: DateTime.tryParse(rawTime) ?? DateTime.now(),
       is_cancel: json['is_cancel'] as int? ?? 0,
       // notice: json['notice'] as String? ?? '',
       imagePath: json['imagePath'] as String? ?? 'images/beangle_back.png',
@@ -43,7 +44,7 @@ class ReservationInfo {
       'reservation_id': reservation_id,
       'user_id': user_id,
       'station_id': station_id,
-      'time': time.toString(),
+      'time': time.toIso8601String(),
       'is_cancel': is_cancel,
       // 'notice': notice,
       //'imagePath': imagePath,
