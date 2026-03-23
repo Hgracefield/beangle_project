@@ -1,15 +1,22 @@
 import 'package:beangle_app/common/common_color.dart';
 import 'package:beangle_app/worker/model/cycle_station.dart';
+import 'package:beangle_app/worker/model/work_api.dart';
+import 'package:beangle_app/worker/model/work_record.dart';
 import 'package:beangle_app/worker/view/worker_theme.dart';
 import 'package:flutter/material.dart';
+import 'package:get_storage/get_storage.dart';
 
 class CycleStationMarker extends StatelessWidget {
   const CycleStationMarker({
     super.key,
     required this.station,
+    required this.isCompleted,
+    required this.currentTime,
+    required this.nextRelocationTime,
     required this.currentTimeLabel,
     required this.nextRelocationLabel,
     required this.currentCount,
+    this.onWorkSubmitted,
     this.cumulativeInflow,
     this.cumulativeOutflow,
     this.preInflow,
@@ -17,15 +24,115 @@ class CycleStationMarker extends StatelessWidget {
   });
 
   final CycleStation station;
+  final bool isCompleted;
+  final DateTime currentTime;
+  final DateTime nextRelocationTime;
   final String currentTimeLabel;
   final String nextRelocationLabel;
   final int currentCount;
+  final Future<void> Function()? onWorkSubmitted;
   final double? cumulativeInflow;
   final double? cumulativeOutflow;
   final double? preInflow;
   final double? preOutflow;
+
+  static final WorkApi _workApi = WorkApi();
+  static final GetStorage _storage = GetStorage();
+
+  bool _isSameSlot(DateTime left, DateTime right) {
+    return left.year == right.year &&
+        left.month == right.month &&
+        left.day == right.day &&
+        left.hour == right.hour;
+  }
+
+  Future<void> _handleSubmitWork({
+    required BuildContext context,
+    required bool isActionWindowActive,
+    required DateTime targetTime,
+    required int workCount,
+  }) async {
+    if (!isActionWindowActive) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('재배치 시간이 아닙니다')),
+      );
+      return;
+    }
+
+    if (workCount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('전송할 작업 수량이 없습니다')),
+      );
+      return;
+    }
+
+    final int? workerId =
+        int.tryParse(_storage.read('worker_id')?.toString() ?? '');
+    if (workerId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('작업자 로그인 정보가 없습니다')),
+      );
+      return;
+    }
+
+    final int? stationId =
+        int.tryParse(station.id.replaceFirst('ST-', ''));
+    if (stationId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('스테이션 번호를 확인할 수 없습니다')),
+      );
+      return;
+    }
+
+    try {
+      final List<WorkRecord> works = await _workApi.fetchWorks();
+      final bool alreadyWorked = works.any((WorkRecord item) {
+        return item.stationId == stationId && _isSameSlot(item.time, targetTime);
+      });
+
+      if (alreadyWorked) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('같은 시간대에 이미 해당 스테이션 작업이 등록되었습니다'),
+          ),
+        );
+        return;
+      }
+
+      final WorkRecord payload = WorkRecord(
+        workerId: workerId,
+        stationId: stationId,
+        count: workCount,
+        time: targetTime,
+      );
+
+      final int result = await _workApi.insertWork(payload);
+      if (result != 1) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('같은 시간대에 이미 해당 스테이션 작업이 등록되었습니다'),
+          ),
+        );
+        return;
+      }
+
+      await onWorkSubmitted?.call();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${station.name} 작업 내역이 저장되었습니다')),
+      );
+    } catch (error) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('작업 내역 저장에 실패했습니다: $error')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final Color markerBorderColor =
+        isCompleted ? const Color(0xFF2F6BFF) : workerThemeColor;
+
     return GestureDetector(
       onTap: () {
         final int? inflowValue =
@@ -36,8 +143,6 @@ class CycleStationMarker extends StatelessWidget {
             (inflowValue != null && outflowValue != null)
                 ? inflowValue - outflowValue
                 : null;
-        final int? actionDelta =
-            netFlowValue == null ? null : netFlowValue - currentCount;
         final int? preInflowValue =
             preInflow == null ? null : preInflow!.round();
         final int? preOutflowValue =
@@ -46,6 +151,48 @@ class CycleStationMarker extends StatelessWidget {
             (preInflowValue != null && preOutflowValue != null)
                 ? preInflowValue - preOutflowValue
                 : null;
+        final int? predictedCountAtRelocation =
+            preNetValue == null ? null : currentCount + preNetValue;
+        final int? actionDelta =
+            (netFlowValue != null && preNetValue != null)
+                ? netFlowValue - currentCount + preNetValue
+                : null;
+        final int? limitedRecoveryCount =
+            (actionDelta != null &&
+                    actionDelta < 0 &&
+                    predictedCountAtRelocation != null &&
+                    actionDelta.abs() > predictedCountAtRelocation)
+                ? (predictedCountAtRelocation - station.rackCount)
+                    .clamp(0, predictedCountAtRelocation)
+                    .toInt()
+                : null;
+        final String actionGuide =
+            actionDelta == null
+                ? '데이터 없음'
+                : actionDelta == 0
+                    ? '현재 상태 유지'
+                    : actionDelta > 0
+                        ? '추가 배치 ${actionDelta}대'
+                        : limitedRecoveryCount != null
+                            ? limitedRecoveryCount == 0
+                                ? '회수 없음 (예측 댓수가 거치대 수 이하)'
+                                : '회수 ${limitedRecoveryCount}대 (거치대 수 ${station.rackCount}대만 남김)'
+                            : '회수 ${actionDelta.abs()}대 (다른 곳 이동)';
+        final int submissionCount =
+            actionDelta == null
+                ? 0
+                : actionDelta > 0
+                    ? actionDelta
+                    : limitedRecoveryCount ?? actionDelta.abs();
+        final DateTime activationStart = nextRelocationTime.subtract(
+          const Duration(hours: 1),
+        );
+        final DateTime activationEnd = nextRelocationTime.add(
+          const Duration(hours: 1),
+        );
+        final bool isActionWindowActive =
+            !currentTime.isBefore(activationStart) &&
+            !currentTime.isAfter(activationEnd);
         final isDarkTheme = Theme.of(context).brightness == Brightness.dark;
         final panelColor = CommonColor.panelColor(isDarkTheme);
         final accentColor = CommonColor.cardAccent();
@@ -121,10 +268,10 @@ class CycleStationMarker extends StatelessWidget {
                       valueColor: primaryTextColor,
                     ),
                     _DialogInfoLine(
-                      label: '재배치 시 예측 댓수',
+                      label: '재배치 직전 예상 대수',
                       value: preNetValue == null
                           ? '데이터 없음'
-                          : '${preNetValue >= 0 ? '+' : ''}$preNetValue대 (${(currentCount+preNetValue)}대)',
+                          : '$predictedCountAtRelocation대 (${preNetValue >= 0 ? '+' : ''}$preNetValue대)',
                       labelColor: labelTextColor,
                       valueColor: primaryTextColor,
                     ),
@@ -152,15 +299,47 @@ class CycleStationMarker extends StatelessWidget {
                     ),
                     _DialogInfoLine(
                       label: '작업 안내',
-                      value: actionDelta == null
-                          ? '데이터 없음'
-                          : actionDelta == 0
-                              ? '현재 상태 유지'
-                              : actionDelta > 0
-                                  ? '추가 배치 ${actionDelta}대'
-                                  : '회수 ${actionDelta.abs()}대 (다른 곳 이동)',
+                      value: actionGuide,
                       labelColor: labelTextColor,
                       valueColor: primaryTextColor,
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: () async {
+                          await _handleSubmitWork(
+                            context: context,
+                            isActionWindowActive:  isActionWindowActive,
+                            targetTime: nextRelocationTime,
+                            workCount: submissionCount,
+                          );
+                        },
+                        style: FilledButton.styleFrom(
+                          backgroundColor:
+                              isActionWindowActive
+                                  ? accentColor
+                                  : Colors.grey.shade400,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        icon: Icon(
+                          isActionWindowActive
+                              ? Icons.assignment_turned_in
+                              : Icons.lock_clock,
+                        ),
+                        label: Text(
+                          isActionWindowActive ? '작업 내역 전송' : '작업 내역 전송',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '재배치 시간 기준 1시간 전부터 1시간 후까지만 활성화됩니다.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: labelTextColor,
+                      ),
                     ),
                   ],
                 ),
@@ -183,7 +362,7 @@ class CycleStationMarker extends StatelessWidget {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: workerThemeColor, width: 1.5),
+              border: Border.all(color: markerBorderColor, width: 1.5),
               boxShadow: const [
                 BoxShadow(
                   color: Color(0x1F000000),
@@ -204,7 +383,7 @@ class CycleStationMarker extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 2),
-          const Icon(Icons.pedal_bike, color: workerThemeColor, size: 20),
+          Icon(Icons.pedal_bike, color: markerBorderColor, size: 20),
         ],
       ),
     );
@@ -231,7 +410,7 @@ class _DialogInfoLine extends StatelessWidget {
       child: Row(
         children: [
           SizedBox(
-            width: 110,
+            width: 120,
             child: Text(
               label,
               style: TextStyle(fontSize: 12, color: labelColor),

@@ -1,5 +1,5 @@
 import 'package:beangle_app/view/restitutor/dashboard.dart';
-import 'package:beangle_app/worker/view/worker_home.dart';
+import 'package:beangle_app/worker/view/map_for_worker.dart';
 import 'package:flutter/material.dart';
 import 'package:beangle_app/auth/auth_find_info.dart';
 import 'package:beangle_app/auth/auth_page.dart';
@@ -62,7 +62,7 @@ class AppRoutes {
     AppRouteItem(
       routeName: workerMap,
       label: 'Worker Map',
-      builder: (_) => const WorkerHomePage(),
+      builder: (_) => const MapForWorkerPage(),
     ),
   ];
 

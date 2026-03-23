@@ -1,10 +1,17 @@
 import 'dart:convert';
+import 'package:beangle_app/app_shell.dart';
+import 'package:beangle_app/common/common_color.dart';
+import 'package:beangle_app/worker/model/work_api.dart';
+import 'package:beangle_app/worker/model/work_record.dart';
 import 'package:beangle_app/worker/view/cycle_station_marker.dart';
 import 'package:beangle_app/worker/view/worker_theme.dart';
 import 'package:beangle_app/worker/model/cycle_station.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:get/get.dart';
+import 'package:get/get_core/get_core.dart';
+import 'package:get_storage/get_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
@@ -25,6 +32,9 @@ class _FlowSummary {
 class _MapForWorkerPageState extends State<MapForWorkerPage> {
 
   // === Property === 
+  static const String _workerIdStorageKey = 'worker_id';
+  static const String _themeStorageKey = 'worker_map_dark_theme';
+
   final _mapCenter = LatLng(37.6177, 126.9227); // 시작 맵 좌표
   final _stationIds = <String>[
     'ST-481',
@@ -42,7 +52,11 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
   bool _isLoading = true; // 로딩 완료 여부
   String? _errorMessage; // 에러 메시지
   List<CycleStation> _stations = const [];
-
+  Set<int> _completedStationIds = <int>{};
+  String? _workerId = '';
+  bool isDarkTheme = false;
+  final GetStorage _storage = GetStorage();
+  final WorkApi _workApi = WorkApi();
   Map<String, dynamic> _predictionData = const {};
 
   @override
@@ -50,6 +64,8 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
     super.initState();
     _loadPredictionData();
     _loadStations();
+    _loadCompletedStations();
+    _workerId = _storage.read(_workerIdStorageKey)?.toString();
   }
 
   
@@ -65,7 +81,112 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
     final followingRelocationLabel =
         _formatRelocationLabel(followingRelocationTime);
     // print(nextRelocationLabel);
-    return Column(
+    return Scaffold(
+       appBar: AppBar(
+        backgroundColor: workerThemeColor,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: true,
+        // leading: IconButton(
+        //   icon: const Icon(Icons.menu),
+        //   onPressed: () {},
+        // ),
+        title: const Text(
+          '따릉이 재배치',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        actions: [
+          Padding(
+            padding: EdgeInsets.only(right: 8),
+            child:  IconButton(
+                onPressed: _isLoading ? null : _loadStations,
+                icon: const Icon(Icons.refresh, color: Colors.white),
+                tooltip: '새로고침',
+              ),
+            // child: GlobalRouteMenu(currentRoute: AppRoutes.workerMap),
+          ),
+        ],
+      ),
+      drawer: Drawer(
+          backgroundColor: CommonColor.panelColor(isDarkTheme),
+          child: ListView(
+            padding: EdgeInsets.zero,
+            children: [
+              DrawerHeader(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [CommonColor.cardAccent(), CommonColor.cardAccent().withValues(alpha: 0.82)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 52,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.18),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.person,
+                            color: Colors.white,
+                            size: 28,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '',
+                                // _userName.isEmpty ? '게스트 사용자' : _userName,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              ListTile(
+                leading: Icon(Icons.brightness_4, color: CommonColor.primaryTextColor(isDarkTheme)),
+                title: Text('다크테마', style: TextStyle(color: CommonColor.primaryTextColor(isDarkTheme))),
+                trailing: Switch(
+                  value: isDarkTheme,
+                  onChanged: (bool value) {
+                    setState(() {
+                      isDarkTheme = value;
+                    });
+                    _persistTheme();
+                  },
+                ),
+              ),
+              
+              ListTile(
+                leading: Icon(Icons.logout, color: CommonColor.primaryTextColor(isDarkTheme)),
+                title: Text('로그아웃', style: TextStyle(color: CommonColor.primaryTextColor(isDarkTheme))),
+                onTap: () async {
+                  Navigator.of(context).pop();
+                  await _logout();
+                },
+              ),
+            ],
+          ),
+        ),
+      body: Column(
       children: [
         Container(
           width: double.infinity,
@@ -88,11 +209,7 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
                   ),
                 ),
               ),
-              IconButton(
-                onPressed: _isLoading ? null : _loadStations,
-                icon: const Icon(Icons.refresh, color: Colors.white),
-                tooltip: '새로고침',
-              ),
+             
             ],
           ),
         ),
@@ -134,6 +251,12 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
                             height: 96,
                             child: CycleStationMarker(
                               station: station,
+                              isCompleted: _completedStationIds.contains(
+                                int.tryParse(station.id.replaceFirst('ST-', '')),
+                              ),
+                              onWorkSubmitted: _loadCompletedStations,
+                              currentTime: now,
+                              nextRelocationTime: nextRelocationTime,
                               currentTimeLabel: _formatHourLabel(now),
                               nextRelocationLabel: nextRelocationLabel,
                               currentCount: station.parkingCount,
@@ -184,6 +307,8 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
                             if (!_isLoading) ...[
                               const SizedBox(height: 6),
                               Text('조회 스테이션 ${visibleStations.length}곳'),
+                              const SizedBox(height: 4),
+                              Text('작업 완료 ${_completedStationIds.length}곳'),
                               if (_predictionData.isNotEmpty) ...[
                               const SizedBox(height: 4),
                               Text(
@@ -243,10 +368,40 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
           ),
         ),
       ],
+    )
     );
   } // build
 
   // === Functions === 
+
+  Future<void> _loadCompletedStations() async {
+    try {
+      final DateTime slotTime = _nextRelocationTime(DateTime.now());
+      final List<WorkRecord> works = await _workApi.fetchWorks();
+      final Set<int> completedIds =
+          works
+              .where((WorkRecord item) => _isSameSlot(item.time, slotTime))
+              .map((WorkRecord item) => item.stationId)
+              .toSet();
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _completedStationIds = completedIds;
+      });
+    } catch (_) {
+      // Ignore completion indicator refresh failures.
+    }
+  }
+
+  bool _isSameSlot(DateTime left, DateTime right) {
+    return left.year == right.year &&
+        left.month == right.month &&
+        left.day == right.day &&
+        left.hour == right.hour;
+  }
 
   DateTime _nextRelocationTime(DateTime now) {
     final todayFour = DateTime(now.year, now.month, now.day, 4);
@@ -438,6 +593,20 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
       location: LatLng(latitude, longitude),
     );
   }
+  void _persistTheme() {
+    _storage.write(_themeStorageKey, isDarkTheme);
+  }
+  Future<void> _logout() async {
+    // 로그인 사용자 식별값을 지우고 로그인 화면으로 복귀한다.
+    await _storage.remove(_workerIdStorageKey);
+    if (!mounted) {
+      return;
+    }
 
-  
+    setState(() {
+      _workerId = null;
+    });
+
+    Get.offAllNamed(AppRoutes.auth);
+  }
 }
