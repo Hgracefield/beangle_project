@@ -14,7 +14,6 @@ import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:get_storage/get_storage.dart';
 
-
 class AuthPage extends StatefulWidget {
   const AuthPage({super.key});
 
@@ -49,9 +48,7 @@ class _AuthPageState extends State<AuthPage> {
             if (!mounted) {
               return;
             }
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text("구글 로그인에 실패했어요.")),
-            );
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("구글 로그인에 실패했어요.")));
           },
         );
       });
@@ -83,22 +80,15 @@ class _AuthPageState extends State<AuthPage> {
   Future<void> _onLoginPressed() async {
     final errorMessage = _validateInputs();
     if (errorMessage != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(errorMessage)),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorMessage)));
       return;
     }
 
-    final payload = {
-      "email": _emailController.text.trim(),
-      "password": _passwordController.text,
-      "phone": "",
-      "name":""
-    };
+    final payload = {"email": _emailController.text.trim(), "password": _passwordController.text, "phone": "", "name": ""};
 
     try {
       final response = await http.post(
-        Uri.parse("http://127.0.0.1:8000/login"),
+        Uri.parse("http://127.0.0.1:8000/auth/login"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode(payload),
       );
@@ -115,57 +105,40 @@ class _AuthPageState extends State<AuthPage> {
           if (userId != null) {
             await _storage.write("user_id", userId);
           }
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("로그인 성공!")),
-          );
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("로그인 성공!")));
           if (!mounted) {
             return;
           }
           Get.to(MapForUserPage());
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("이메일 또는 비밀번호가 올바르지 않아요.")),
-          );
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("이메일 또는 비밀번호가 올바르지 않아요.")));
         }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("로그인에 실패했어요. (${response.statusCode})")),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("로그인에 실패했어요. (${response.statusCode})")));
       }
     } catch (_) {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("서버에 연결할 수 없어요.")),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("서버에 연결할 수 없어요.")));
     }
   }
 
-  Future<void> _sendGoogleAuthToServer(
-    GoogleSignInAccount account, {
-    required bool isSignUp,
-  }) async {
+  Future<void> _sendGoogleAuthToServer(GoogleSignInAccount account, {required bool isSignUp}) async {
     final idToken = await _googleAuthService.getIdToken(account);
     if (!mounted) {
       return;
     }
     if (idToken == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("구글 토큰을 가져올 수 없어요.")),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("구글 토큰을 가져올 수 없어요.")));
       return;
     }
 
-    final payload = {
-      "email": account.email,
-      "name": account.displayName ?? "",
-      "idToken": idToken,
-    };
+    final payload = {"email": account.email, "name": account.displayName ?? "", "idToken": idToken};
 
     try {
       final response = await http.post(
-        Uri.parse("http://localhost:8000/google_login"),
+        Uri.parse("http://localhost:8000/auth/google_login"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode(payload),
       );
@@ -183,9 +156,7 @@ class _AuthPageState extends State<AuthPage> {
             await _storage.write("user_id", userId);
           }
           final message = isSignUp ? "구글 가입 완료!" : "구글 로그인 완료!";
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(message)),
-          );
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
           if (!mounted) {
             return;
           }
@@ -194,16 +165,12 @@ class _AuthPageState extends State<AuthPage> {
         }
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("구글 로그인에 실패했어요.")),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("구글 로그인에 실패했어요.")));
     } catch (_) {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("서버에 연결할 수 없어요.")),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("서버에 연결할 수 없어요.")));
     }
   }
 
@@ -215,9 +182,7 @@ class _AuthPageState extends State<AuthPage> {
       }
 
       if (account == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("로그인이 취소됐어요.")),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("로그인이 취소됐어요.")));
         return;
       }
 
@@ -226,9 +191,7 @@ class _AuthPageState extends State<AuthPage> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("구글 로그인에 실패했어요.")),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("구글 로그인에 실패했어요.")));
     }
   }
 
@@ -269,20 +232,14 @@ class _AuthPageState extends State<AuthPage> {
 
               SizedBox(height: 20),
 
-              PrimaryButton(
-                text: "로그인",
-                onPressed: _onLoginPressed,
-              ),
+              PrimaryButton(text: "로그인", onPressed: _onLoginPressed),
 
               SizedBox(height: 16),
               Text("또는"),
 
               SizedBox(height: 16),
 
-              GoogleAuthButton(
-                onPressed: _onGoogleLoginPressed,
-                label: "Google로 로그인",
-              ),
+              GoogleAuthButton(onPressed: _onGoogleLoginPressed, label: "Google로 로그인"),
 
               SizedBox(height: 16),
 
@@ -291,7 +248,7 @@ class _AuthPageState extends State<AuthPage> {
                   Get.to(AuthSignPage());
                 },
                 child: Text("회원가입"),
-              )
+              ),
             ],
           ),
         ),

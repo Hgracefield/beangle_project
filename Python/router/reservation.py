@@ -44,6 +44,24 @@ async def get(id: int):
     return {'results':results}
 
 
+@router.get('/selectByUserId/{id}')
+async def get(id:int):
+    conn = connect()
+    curs = conn.cursor()
+
+    sql = 'select * from reservation where user_id=%s order by reservation_id desc' # (%s,%s,%s,%s)'
+    curs.execute(sql,[])
+    rows = curs.fetchall()
+    
+    conn.close()
+    column_names = [desc[0] for desc in curs.description]
+    print(column_names)
+    #결과물 dictionary 형태로 전환
+    results = [dict(zip(column_names,row)) for row in rows]
+    print(results)
+
+    return {'results':results}
+
 
 @router.get('/select')
 async def get():
