@@ -1,6 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:beangle_app/app_shell.dart';
+import 'package:beangle_app/reservation/model/reservation_api.dart';
+import 'package:beangle_app/reservation/model/reservation_info.dart';
+import 'package:beangle_app/reservation/reservation.dart';
 import 'package:beangle_app/user/user_profile_page.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -26,11 +30,13 @@ class _MapForUserPageState extends State<MapForUserPage> {
       'assets/data/station_hourly_predictions.json';
   static const String _favoriteStorageKey = 'favorite_station_ids';
   static const String _themeStorageKey = 'user_map_dark_theme';
-  static const String _reservationStorageKey = 'station_reservations';
   static const String _userIdStorageKey = 'user_id';
 
   final MapController _mapController = MapController();
   final GetStorage _storage = GetStorage();
+  final ReservationApi _reservationApi = ReservationApi();
+  Timer? _clockRefreshTimer;
+  Timer? _reservationRefreshTimer;
 
   // 지도와 화면 상태.
   late latlong.LatLng _currentPosition;
@@ -119,28 +125,35 @@ class _MapForUserPageState extends State<MapForUserPage> {
     // 첫 진입 시 로컬 상태, 예측 자산, 실시간 대여소, 위치/날씨를 순서대로 준비한다.
     _currentPosition = const latlong.LatLng(37.615, 126.917);
     _hydrateLocalState();
+    _loadReservations();
     _loadUserProfile();
     _loadPredictionData();
     _loadStations();
     Future.delayed(const Duration(milliseconds: 100), _fitMarkersOnMap);
     _getCurrentLocation();
     _fetchWeather();
+    _startRealtimeRefresh();
+  }
+
+  @override
+  void dispose() {
+    _clockRefreshTimer?.cancel();
+    _reservationRefreshTimer?.cancel();
+    super.dispose();
   }
 
   void _hydrateLocalState() {
-    // 즐겨찾기, 다크모드, 예약 시각을 로컬 저장소에서 복구한다.
+    // 즐겨찾기와 다크모드, 로그인 정보만 로컬 저장소에서 복구한다.
     final List<dynamic>? favorites = _storage.read<List<dynamic>>(
       _favoriteStorageKey,
     );
-    final Map<dynamic, dynamic>? reservations = _storage
-        .read<Map<dynamic, dynamic>>(_reservationStorageKey);
 
     _isDarkTheme = _storage.read<bool>(_themeStorageKey) ?? false;
     _userId = _storage.read(_userIdStorageKey)?.toString();
     _favoriteStationIds = (favorites ?? <dynamic>[])
         .map((dynamic id) => id.toString())
         .toSet();
-    _reservedTimes = _decodeReservedTimes(reservations);
+    _reservedTimes = <String, List<DateTime>>{};
   }
 
   String get _authApiBaseUrl {
@@ -152,45 +165,25 @@ class _MapForUserPageState extends State<MapForUserPage> {
     return 'http://10.0.2.2:8000';
   }
 
-  Map<String, List<DateTime>> _decodeReservedTimes(Map<dynamic, dynamic>? raw) {
-    // 예전 offset 저장 형식과 현재 DateTime 저장 형식을 모두 읽을 수 있게 유지한다.
+  Map<String, List<DateTime>> _groupReservationsByStation(
+    List<ReservationInfo> reservations,
+  ) {
     final Map<String, List<DateTime>> decoded = <String, List<DateTime>>{};
-    if (raw == null) {
-      return decoded;
-    }
+    final DateTime now = DateTime.now();
 
-    raw.forEach((dynamic stationId, dynamic value) {
-      final List<DateTime> stationReservations = <DateTime>[];
-
-      if (value is List) {
-        for (final dynamic item in value) {
-          final DateTime? parsed = DateTime.tryParse(item.toString());
-          if (parsed != null && parsed.isAfter(DateTime.now())) {
-            stationReservations.add(parsed);
-          }
-        }
-      } else if (value is Map) {
-        value.forEach((dynamic hour, dynamic count) {
-          final int? parsedHour = int.tryParse(hour.toString());
-          final int? parsedCount = int.tryParse(count.toString());
-          if (parsedHour == null || parsedCount == null || parsedCount <= 0) {
-            return;
-          }
-          for (int i = 0; i < parsedCount; i++) {
-            stationReservations.add(
-              DateTime.now().add(Duration(hours: parsedHour)),
-            );
-          }
-        });
-      } else {
-        return;
+    for (final ReservationInfo reservation in reservations) {
+      if (reservation.is_cancel == 1 || !reservation.time.isAfter(now)) {
+        continue;
       }
 
+      final String stationId = 'ST-${reservation.station_id}';
+      final List<DateTime> stationReservations = decoded.putIfAbsent(
+        stationId,
+        () => <DateTime>[],
+      );
+      stationReservations.add(reservation.time);
       stationReservations.sort();
-      if (stationReservations.isNotEmpty) {
-        decoded[stationId.toString()] = stationReservations;
-      }
-    });
+    }
 
     return decoded;
   }
@@ -201,24 +194,6 @@ class _MapForUserPageState extends State<MapForUserPage> {
 
   void _persistTheme() {
     _storage.write(_themeStorageKey, _isDarkTheme);
-  }
-
-  void _persistReservations() {
-    // 지난 예약은 정리하고, 남아 있는 예약만 ISO 문자열로 저장한다.
-    _pruneExpiredReservations();
-    final Map<String, List<String>> encoded = <String, List<String>>{};
-    _reservedTimes.forEach((String stationId, List<DateTime> times) {
-      final List<String> filtered =
-          times
-              .where((DateTime time) => time.isAfter(DateTime.now()))
-              .map((DateTime time) => time.toIso8601String())
-              .toList()
-            ..sort();
-      if (filtered.isNotEmpty) {
-        encoded[stationId] = filtered;
-      }
-    });
-    _storage.write(_reservationStorageKey, encoded);
   }
 
   void _pruneExpiredReservations() {
@@ -235,6 +210,57 @@ class _MapForUserPageState extends State<MapForUserPage> {
     });
 
     _reservedTimes = next;
+  }
+
+  Future<void> _loadReservations() async {
+    final String? userId = _userId;
+    if (userId == null || userId.isEmpty) {
+      return;
+    }
+
+    try {
+      final List<ReservationInfo> reservations = await _reservationApi
+          .fetchReservationsByUserId(userId: int.parse(userId));
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _reservedTimes = _groupReservationsByStation(reservations);
+      });
+      _rebuildMarkers();
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('예약 정보를 불러오지 못했습니다.')));
+    }
+  }
+
+  void _startRealtimeRefresh() {
+    _clockRefreshTimer?.cancel();
+    _reservationRefreshTimer?.cancel();
+
+    // 현재 시각 기반 문구와 예측 수치는 주기적으로 다시 그려야
+    // "N시간 후" 기준 표시가 실제 시간 흐름을 따라간다.
+    _clockRefreshTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _pruneExpiredReservations();
+      });
+      _rebuildMarkers();
+    });
+
+    // 서버 예약 목록도 주기적으로 새로 읽어와 다른 화면/세션의 변경을 반영한다.
+    _reservationRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (!mounted) {
+        return;
+      }
+      _loadReservations();
+    });
   }
 
   Future<void> _loadUserProfile() async {
@@ -858,6 +884,14 @@ class _MapForUserPageState extends State<MapForUserPage> {
       return;
     }
 
+    final String? userId = _userId;
+    if (userId == null || userId.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('로그인 후 예약할 수 있습니다.')));
+      return;
+    }
+
     final Map<String, dynamic>? station = _stations[stationId];
     if (station == null) {
       return;
@@ -894,44 +928,66 @@ class _MapForUserPageState extends State<MapForUserPage> {
       return;
     }
 
-    setState(() {
-      final List<DateTime> stationReservations = _reservedTimes.putIfAbsent(
-        stationId,
-        () => <DateTime>[],
-      );
-      stationReservations.add(normalizedTargetReservationTime);
-      stationReservations.sort();
-    });
-    _persistReservations();
-    _rebuildMarkers();
-
-    final String stationName = station['name'] as String;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          '$stationName 예약 완료: ${_formatDateTime(normalizedTargetReservationTime)}',
-        ),
-      ),
+    final ReservationInfo pendingReservation = ReservationInfo(
+      reservation_id: 0,
+      user_id: int.parse(userId),
+      station_id: int.parse(stationId.replaceFirst('ST-', '')),
+      time: normalizedTargetReservationTime,
+      is_cancel: 0,
     );
+
+    Get.to(
+      () => ReservationPage(
+        initialReservation: pendingReservation,
+        initialStationName: station['name'] as String,
+      ),
+    )?.then((_) => _loadReservations());
   }
 
-  void _clearReservation(String stationId, DateTime targetTime) {
-    // 예약 목록/상세보기에서 선택한 특정 예약 시각 한 건만 제거한다.
-    final List<DateTime>? stationReservations = _reservedTimes[stationId];
-    if (stationReservations == null) {
+  Future<void> _clearReservation(String stationId, DateTime targetTime) async {
+    // 서버에 저장된 현재 사용자 예약 한 건을 찾아 삭제한다.
+    final String? userId = _userId;
+    if (userId == null || userId.isEmpty) {
       return;
     }
 
-    setState(() {
-      stationReservations.removeWhere(
-        (DateTime value) => value.isAtSameMomentAs(targetTime),
-      );
-      if (stationReservations.isEmpty) {
-        _reservedTimes.remove(stationId);
+    try {
+      final List<ReservationInfo> reservations = await _reservationApi
+          .fetchReservationsByUserId(userId: int.parse(userId));
+      ReservationInfo? reservation;
+      for (final ReservationInfo item in reservations) {
+        if (item.station_id.toString() == stationId.replaceFirst('ST-', '') &&
+            item.time.isAtSameMomentAs(targetTime)) {
+          reservation = item;
+          break;
+        }
       }
-    });
-    _persistReservations();
-    _rebuildMarkers();
+
+      if (reservation == null) {
+        return;
+      }
+
+      final int result = await _reservationApi.deleteReservation(reservation);
+      if (result != 1) {
+        throw Exception('delete failed');
+      }
+
+      await _loadReservations();
+      _rebuildMarkers();
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('예약이 취소되었습니다.')));
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('예약 취소에 실패했습니다.')));
+    }
   }
 
   void _clearReservationsUpToHour(String stationId, int hour) {
