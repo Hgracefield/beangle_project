@@ -72,7 +72,7 @@ async def insert(data: ReservationModel):
     conn = connect()
     curs = conn.cursor()
 
-    sql = 'INSERT INTO reservation(user_id, station_id, time, is_cancel) values(%s,%s,%s,%s)'
+    sql = 'INSERT INTO reservation(user_id, station_id, `time`, is_cancel) values(%s,%s,%s,%s)'
     curs.execute(sql,[data.user_id, data.station_id, data.time, data.is_cancel])
     conn.commit()
     conn.close()
