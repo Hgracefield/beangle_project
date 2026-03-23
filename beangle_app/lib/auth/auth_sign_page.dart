@@ -49,9 +49,7 @@ class _AuthSignPageState extends State<AuthSignPage> {
             if (!mounted) {
               return;
             }
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text("구글 가입에 실패했어요.")),
-            );
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("구글 가입에 실패했어요.")));
           },
         );
       });
@@ -98,9 +96,7 @@ class _AuthSignPageState extends State<AuthSignPage> {
   Future<void> _onSignUpPressed() async {
     final errorMessage = _validateInputs();
     if (errorMessage != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(errorMessage)),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorMessage)));
       return;
     }
 
@@ -108,7 +104,7 @@ class _AuthSignPageState extends State<AuthSignPage> {
       "email": _emailController.text.trim(),
       "password": _passwordController.text,
       "phone": _phoneController.text.trim(),
-      "name": _nameController.text.trim()
+      "name": _nameController.text.trim(),
     };
 
     try {
@@ -123,26 +119,20 @@ class _AuthSignPageState extends State<AuthSignPage> {
       }
 
       if (response.statusCode == 200) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("회원가입이 완료됐어요.")),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("회원가입이 완료됐어요.")));
         await Future.delayed(const Duration(milliseconds: 300));
         if (!mounted) {
           return;
         }
         Navigator.pop(context);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("회원가입에 실패했어요. (${response.statusCode})")),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("회원가입에 실패했어요. (${response.statusCode})")));
       }
     } catch (_) {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("서버에 연결할 수 없어요.")),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("서버에 연결할 수 없어요.")));
     }
   }
 
@@ -152,21 +142,15 @@ class _AuthSignPageState extends State<AuthSignPage> {
       return;
     }
     if (idToken == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("구글 토큰을 가져올 수 없어요.")),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("구글 토큰을 가져올 수 없어요.")));
       return;
     }
 
-    final payload = {
-      "email": account.email,
-      "name": account.displayName ?? "",
-      "idToken": idToken,
-    };
+    final payload = {"email": account.email, "name": account.displayName ?? "", "idToken": idToken};
 
     try {
       final response = await http.post(
-        Uri.parse("http://localhost:8000/google_login"),
+        Uri.parse("http://localhost:8000/auth/google_login"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode(payload),
       );
@@ -183,9 +167,7 @@ class _AuthSignPageState extends State<AuthSignPage> {
           if (userId != null) {
             await _storage.write("user_id", userId);
           }
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("구글 계정으로 가입됐어요.")),
-          );
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("구글 계정으로 가입됐어요.")));
           if (!mounted) {
             return;
           }
@@ -194,16 +176,12 @@ class _AuthSignPageState extends State<AuthSignPage> {
         }
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("구글 가입에 실패했어요.")),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("구글 가입에 실패했어요.")));
     } catch (_) {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("서버에 연결할 수 없어요.")),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("서버에 연결할 수 없어요.")));
     }
   }
 
@@ -215,9 +193,7 @@ class _AuthSignPageState extends State<AuthSignPage> {
       }
 
       if (account == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("가입이 취소됐어요.")),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("가입이 취소됐어요.")));
         return;
       }
 
@@ -226,9 +202,7 @@ class _AuthSignPageState extends State<AuthSignPage> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("구글 가입에 실패했어요.")),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("구글 가입에 실패했어요.")));
     }
   }
 
@@ -250,12 +224,7 @@ class _AuthSignPageState extends State<AuthSignPage> {
 
               SizedBox(height: 30),
 
-              CustomTextField(
-                hint: "이름 입력",
-                icon: Icons.person,
-                controller: _nameController,
-                textInputAction: TextInputAction.next,
-              ),
+              CustomTextField(hint: "이름 입력", icon: Icons.person, controller: _nameController, textInputAction: TextInputAction.next),
               SizedBox(height: 16),
 
               CustomTextField(
@@ -286,10 +255,7 @@ class _AuthSignPageState extends State<AuthSignPage> {
 
               SizedBox(height: 20),
 
-              PrimaryButton(
-                text: "회원가입",
-                onPressed: _onSignUpPressed,
-              ),
+              PrimaryButton(text: "회원가입", onPressed: _onSignUpPressed),
 
               SizedBox(height: 16),
               Text("또는"),
@@ -298,10 +264,7 @@ class _AuthSignPageState extends State<AuthSignPage> {
 
               SizedBox(height: 16),
 
-              GoogleAuthButton(
-                onPressed: _onGoogleSignUpPressed,
-                label: "Google로 가입",
-              ),
+              GoogleAuthButton(onPressed: _onGoogleSignUpPressed, label: "Google로 가입"),
 
               SizedBox(height: 16),
 
@@ -310,7 +273,7 @@ class _AuthSignPageState extends State<AuthSignPage> {
                   Navigator.pop(context);
                 },
                 child: Text("이미 계정이 있나요? 로그인"),
-              )
+              ),
             ],
           ),
         ),

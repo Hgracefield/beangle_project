@@ -10,7 +10,14 @@ class ReservationCardWidget extends StatelessWidget {
   // 저장 하기
 
   Future<void> insertReservation() async {
-    ReservationInfo test = ReservationInfo(reservation_id: 0, user_id: 1, station_id: 444, time: DateTime.parse('2026-01-01'), is_cancel: 0);
+    ReservationInfo test = ReservationInfo(
+      //
+      reservation_id: 0,
+      user_id: 1,
+      station_id: 444,
+      time: DateTime.parse('2026-01-01'),
+      is_cancel: 0,
+    );
 
     final result = await ReservationApi().insertReservation(test);
 
