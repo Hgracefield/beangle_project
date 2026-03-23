@@ -3,6 +3,7 @@ import 'package:beangle_app/auth/custom_textfield.dart';
 import 'package:beangle_app/auth/google_auth_button.dart';
 import 'package:beangle_app/auth/google_auth_service.dart';
 import 'package:beangle_app/auth/primaryButton.dart';
+import 'package:beangle_app/user/map_for_user.dart';
 import 'package:flutter/material.dart';
 import 'package:beangle_app/app_shell.dart';
 import 'package:get/get.dart';
@@ -120,7 +121,7 @@ class _AuthPageState extends State<AuthPage> {
           if (!mounted) {
             return;
           }
-          Get.to(AuthPage());
+          Get.to(MapForUserPage());
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text("이메일 또는 비밀번호가 올바르지 않아요.")),
@@ -188,7 +189,7 @@ class _AuthPageState extends State<AuthPage> {
           if (!mounted) {
             return;
           }
-          Get.to(AuthPage());
+          Get.to(MapForUserPage());
           return;
         }
       }
