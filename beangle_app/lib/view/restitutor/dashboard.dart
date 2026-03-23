@@ -9,11 +9,19 @@
 //   - Aligned the column mapping with the stationCode + cycle availability data.
 // - 23-Mar-2026, Codex
 //   - Added station selection and a selected-station chart view with fl_chart.
+// - 23-Mar-2026, Codex
+//   - Fixed reservation synchronization for the current reservation state flow.
+//   - Added station-filtered refill logs from the Python API.
+// - 23-Mar-2026, Codex
+//   - Reworked the dashboard to adapt to the current reservation/backend files
+//     without changing other existing files.
+//   - Kept refill log loading as a dashboard-side best-effort integration.
 // ===============================================
 import 'dart:convert';
 
 import 'package:beangle_app/app_shell.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get_storage/get_storage.dart';
@@ -53,26 +61,31 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
   static const List<_StationSeed> _stationSeeds = <_StationSeed>[
     _StationSeed(
       stationCode: 'ST-481',
+      stationNumber: 933,
       fallbackAvailable: 9,
       fallbackParking: 6,
     ),
     _StationSeed(
       stationCode: 'ST-2425',
+      stationNumber: 4652,
       fallbackAvailable: 0,
       fallbackParking: 0,
     ),
     _StationSeed(
       stationCode: 'ST-1331',
+      stationNumber: 956,
       fallbackAvailable: 10,
       fallbackParking: 8,
     ),
     _StationSeed(
       stationCode: 'ST-454',
+      stationNumber: 906,
       fallbackAvailable: 5,
       fallbackParking: 4,
     ),
     _StationSeed(
       stationCode: 'ST-453',
+      stationNumber: 905,
       fallbackAvailable: 11,
       fallbackParking: 9,
     ),
@@ -86,16 +99,20 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
       const <String, _StationAvailabilitySnapshot>{};
   List<_ReservationCycleRow> _reservationCycleRows =
       const <_ReservationCycleRow>[];
+  List<_RefillLogItem> _refillLogs = const <_RefillLogItem>[];
   String? _selectedStationCode;
+  String? _refillLogErrorText;
   bool _isLoading = true;
+  bool _isRefillLogLoading = false;
+  int _refillLogRequestToken = 0;
 
   @override
   void initState() {
     super.initState();
 
-    // The dashboard listens to the same reservation storage key that drives
-    // the cycle forecast logic so reservation create/cancel writes rebuild the
-    // table without any manual refresh.
+    // The dashboard reacts to the shared reservation storage already used by
+    // the current user-side reservation flow, so table and chart data rebuild
+    // automatically without changing the existing reservation files.
     _cancelReservationStorageListener = _storage.listenKey(
       _reservationStorageKey,
       (_) => _rebuildReservationCycleRows(),
@@ -110,18 +127,34 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
     super.dispose();
   }
 
+  String get _pythonApiBaseUrl {
+    if (kIsWeb ||
+        defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.macOS) {
+      return 'http://127.0.0.1:8000';
+    }
+
+    return 'http://10.0.2.2:8000';
+  }
+
   Future<void> _initializeReservationCycleTable() async {
     final Map<String, dynamic> predictionData = await _loadPredictionData();
     final Map<String, _StationAvailabilitySnapshot> stationAvailabilityByCode =
         await _loadStationAvailabilityByCode();
+    final String? selectedStationCode = _resolveSelectedStationCode(
+      _reservationCycleRows,
+    );
     final List<_ReservationCycleRow> reservationCycleRows =
         _buildReservationCycleRows(
           predictionData: predictionData,
           stationAvailabilityByCode: stationAvailabilityByCode,
-          reservedCounts: _decodeReservedCounts(
+          reservedTimes: _decodeReservedTimes(
             _storage.read<Map<dynamic, dynamic>>(_reservationStorageKey),
           ),
         );
+    final String? resolvedSelectedStationCode = _resolveSelectedStationCode(
+      reservationCycleRows,
+    );
 
     if (!mounted) {
       return;
@@ -131,9 +164,11 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
       _predictionData = predictionData;
       _stationAvailabilityByCode = stationAvailabilityByCode;
       _reservationCycleRows = reservationCycleRows;
-      _selectedStationCode = _resolveSelectedStationCode(reservationCycleRows);
+      _selectedStationCode = resolvedSelectedStationCode ?? selectedStationCode;
       _isLoading = false;
     });
+
+    await _loadRefillLogsForSelectedStation();
   }
 
   Future<Map<String, _StationAvailabilitySnapshot>>
@@ -164,10 +199,15 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
         _buildReservationCycleRows(
           predictionData: _predictionData,
           stationAvailabilityByCode: _stationAvailabilityByCode,
-          reservedCounts: _decodeReservedCounts(
+          reservedTimes: _decodeReservedTimes(
             _storage.read<Map<dynamic, dynamic>>(_reservationStorageKey),
           ),
         );
+    final String? nextSelectedStationCode = _resolveSelectedStationCode(
+      reservationCycleRows,
+    );
+    final bool didSelectedStationChange =
+        nextSelectedStationCode != _selectedStationCode;
 
     if (!mounted) {
       return;
@@ -175,8 +215,12 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
 
     setState(() {
       _reservationCycleRows = reservationCycleRows;
-      _selectedStationCode = _resolveSelectedStationCode(reservationCycleRows);
+      _selectedStationCode = nextSelectedStationCode;
     });
+
+    if (didSelectedStationChange) {
+      _loadRefillLogsForSelectedStation();
+    }
   }
 
   String? _resolveSelectedStationCode(List<_ReservationCycleRow> rows) {
@@ -210,11 +254,26 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
     return _reservationCycleRows.isEmpty ? null : _reservationCycleRows.first;
   }
 
+  _StationSeed? get _selectedStationSeed {
+    final String? selectedStationCode = _selectedStationCode;
+    if (selectedStationCode == null) {
+      return null;
+    }
+
+    for (final _StationSeed seed in _stationSeeds) {
+      if (seed.stationCode == selectedStationCode) {
+        return seed;
+      }
+    }
+
+    return null;
+  }
+
   List<_ReservationCycleRow> _buildReservationCycleRows({
     required Map<String, dynamic> predictionData,
     required Map<String, _StationAvailabilitySnapshot>
     stationAvailabilityByCode,
-    required Map<String, Map<int, int>> reservedCounts,
+    required Map<String, List<DateTime>> reservedTimes,
   }) {
     return _stationSeeds
         .map((_StationSeed seed) {
@@ -224,7 +283,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
             stationAvailability:
                 stationAvailabilityByCode[seed.stationCode] ??
                 seed.toSnapshot(),
-            reservedCounts: reservedCounts,
+            reservedTimes: reservedTimes,
           );
         })
         .toList(growable: false);
@@ -234,7 +293,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
     required _StationSeed seed,
     required Map<String, dynamic> predictionData,
     required _StationAvailabilitySnapshot stationAvailability,
-    required Map<String, Map<int, int>> reservedCounts,
+    required Map<String, List<DateTime>> reservedTimes,
   }) {
     final int currentAvailableCycleCount = stationAvailability.available;
     final int rackCount =
@@ -249,7 +308,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
         rackCount: rackCount,
         offsetHour: 1,
         predictionData: predictionData,
-        reservedCounts: reservedCounts,
+        reservedTimes: reservedTimes,
       ),
       availableCycleCountAfter2Hours: _calculateAvailableCycleCount(
         stationCode: seed.stationCode,
@@ -257,7 +316,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
         rackCount: rackCount,
         offsetHour: 2,
         predictionData: predictionData,
-        reservedCounts: reservedCounts,
+        reservedTimes: reservedTimes,
       ),
       availableCycleCountAfter3Hours: _calculateAvailableCycleCount(
         stationCode: seed.stationCode,
@@ -265,7 +324,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
         rackCount: rackCount,
         offsetHour: 3,
         predictionData: predictionData,
-        reservedCounts: reservedCounts,
+        reservedTimes: reservedTimes,
       ),
       availableCycleCountAfter4Hours: _calculateAvailableCycleCount(
         stationCode: seed.stationCode,
@@ -273,7 +332,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
         rackCount: rackCount,
         offsetHour: 4,
         predictionData: predictionData,
-        reservedCounts: reservedCounts,
+        reservedTimes: reservedTimes,
       ),
       availableCycleCountAfter5Hours: _calculateAvailableCycleCount(
         stationCode: seed.stationCode,
@@ -281,7 +340,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
         rackCount: rackCount,
         offsetHour: 5,
         predictionData: predictionData,
-        reservedCounts: reservedCounts,
+        reservedTimes: reservedTimes,
       ),
       availableCycleCountAfter6Hours: _calculateAvailableCycleCount(
         stationCode: seed.stationCode,
@@ -289,7 +348,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
         rackCount: rackCount,
         offsetHour: 6,
         predictionData: predictionData,
-        reservedCounts: reservedCounts,
+        reservedTimes: reservedTimes,
       ),
       availableCycleCountAfter7Hours: _calculateAvailableCycleCount(
         stationCode: seed.stationCode,
@@ -297,7 +356,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
         rackCount: rackCount,
         offsetHour: 7,
         predictionData: predictionData,
-        reservedCounts: reservedCounts,
+        reservedTimes: reservedTimes,
       ),
       availableCycleCountAfter8Hours: _calculateAvailableCycleCount(
         stationCode: seed.stationCode,
@@ -305,7 +364,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
         rackCount: rackCount,
         offsetHour: 8,
         predictionData: predictionData,
-        reservedCounts: reservedCounts,
+        reservedTimes: reservedTimes,
       ),
     );
   }
@@ -321,33 +380,157 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
     }
   }
 
-  Map<String, Map<int, int>> _decodeReservedCounts(Map<dynamic, dynamic>? raw) {
-    final Map<String, Map<int, int>> decoded = <String, Map<int, int>>{};
+  String? _normalizeStationCode(dynamic stationKey) {
+    final String rawStationKey = stationKey.toString();
+
+    for (final _StationSeed seed in _stationSeeds) {
+      if (seed.stationCode == rawStationKey ||
+          seed.stationNumber.toString() == rawStationKey) {
+        return seed.stationCode;
+      }
+    }
+
+    return null;
+  }
+
+  Map<String, List<DateTime>> _decodeReservedTimes(Map<dynamic, dynamic>? raw) {
+    final Map<String, List<DateTime>> decoded = <String, List<DateTime>>{};
     if (raw == null) {
       return decoded;
     }
 
-    raw.forEach((dynamic stationCode, dynamic offsetMap) {
-      if (offsetMap is! Map) {
+    raw.forEach((dynamic stationKey, dynamic value) {
+      final String? stationCode = _normalizeStationCode(stationKey);
+      if (stationCode == null) {
         return;
       }
 
-      final Map<int, int> stationReservations = <int, int>{};
-      offsetMap.forEach((dynamic hour, dynamic count) {
-        final int? parsedHour = int.tryParse(hour.toString());
-        final int? parsedCount = int.tryParse(count.toString());
-        if (parsedHour == null || parsedCount == null || parsedCount <= 0) {
-          return;
-        }
-        stationReservations[parsedHour] = parsedCount;
-      });
+      final List<DateTime> stationReservations = <DateTime>[];
 
-      if (stationReservations.isNotEmpty) {
-        decoded[stationCode.toString()] = stationReservations;
+      if (value is List) {
+        for (final dynamic item in value) {
+          final DateTime? parsedTime = DateTime.tryParse(item.toString());
+          if (parsedTime != null) {
+            stationReservations.add(parsedTime);
+          }
+        }
+      } else if (value is Map) {
+        value.forEach((dynamic hour, dynamic count) {
+          final int? parsedHour = int.tryParse(hour.toString());
+          final int? parsedCount = int.tryParse(count.toString());
+          if (parsedHour == null || parsedCount == null || parsedCount <= 0) {
+            return;
+          }
+
+          for (int index = 0; index < parsedCount; index++) {
+            stationReservations.add(
+              DateTime.now().add(Duration(hours: parsedHour)),
+            );
+          }
+        });
+      } else {
+        return;
       }
+
+      stationReservations.sort();
+      if (stationReservations.isEmpty) {
+        return;
+      }
+
+      final List<DateTime> mergedReservations = decoded.putIfAbsent(
+        stationCode,
+        () => <DateTime>[],
+      );
+      for (final DateTime reservationTime in stationReservations) {
+        if (!mergedReservations.any(
+          (DateTime value) => value.isAtSameMomentAs(reservationTime),
+        )) {
+          mergedReservations.add(reservationTime);
+        }
+      }
+      mergedReservations.sort();
     });
 
     return decoded;
+  }
+
+  Future<void> _loadRefillLogsForSelectedStation() async {
+    final _StationSeed? selectedStationSeed = _selectedStationSeed;
+    if (selectedStationSeed == null) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _refillLogs = const <_RefillLogItem>[];
+        _refillLogErrorText = null;
+        _isRefillLogLoading = false;
+      });
+      return;
+    }
+
+    final int requestToken = ++_refillLogRequestToken;
+    if (mounted) {
+      setState(() {
+        _isRefillLogLoading = true;
+        _refillLogErrorText = null;
+      });
+    }
+
+    final Uri uri = Uri.parse('$_pythonApiBaseUrl/refill-logs').replace(
+      queryParameters: <String, String>{
+        'station_code': selectedStationSeed.stationCode,
+        'station_number': selectedStationSeed.stationNumber.toString(),
+      },
+    );
+
+    try {
+      final http.Response response = await http.get(uri);
+      if (requestToken != _refillLogRequestToken || !mounted) {
+        return;
+      }
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        setState(() {
+          _isRefillLogLoading = false;
+          _refillLogErrorText = response.statusCode == 404
+              ? 'Refill logs are not exposed by the current Python API.'
+              : 'Refill logs could not be loaded.';
+        });
+        return;
+      }
+
+      final Map<String, dynamic> json =
+          jsonDecode(response.body) as Map<String, dynamic>;
+      final List<dynamic> rawLogs =
+          json['logs'] as List<dynamic>? ?? <dynamic>[];
+      final List<_RefillLogItem> refillLogs =
+          rawLogs
+              .map(
+                (dynamic item) =>
+                    _RefillLogItem.fromJson(item as Map<String, dynamic>),
+              )
+              .toList(growable: false)
+            ..sort(
+              (_RefillLogItem a, _RefillLogItem b) =>
+                  b.refillTime.compareTo(a.refillTime),
+            );
+
+      setState(() {
+        _isRefillLogLoading = false;
+        _refillLogs = refillLogs;
+      });
+    } catch (_) {
+      if (requestToken != _refillLogRequestToken || !mounted) {
+        return;
+      }
+
+      setState(() {
+        _isRefillLogLoading = false;
+        _refillLogErrorText =
+            'Refill logs could not be loaded from the current Python API.';
+      });
+    }
   }
 
   Future<_StationAvailabilitySnapshot> _fetchStationAvailability(
@@ -395,7 +578,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
     required int rackCount,
     required int offsetHour,
     required Map<String, dynamic> predictionData,
-    required Map<String, Map<int, int>> reservedCounts,
+    required Map<String, List<DateTime>> reservedTimes,
   }) {
     final double predictedNetFlow = _lookupPredictedNetFlow(
       stationCode: stationCode,
@@ -405,7 +588,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
     final int reservationImpact = _cumulativeReservedCount(
       stationCode: stationCode,
       hour: offsetHour,
-      reservedCounts: reservedCounts,
+      reservedTimes: reservedTimes,
     );
     final int predicted =
         (currentAvailableCycleCount + predictedNetFlow).round() -
@@ -441,19 +624,17 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
   int _cumulativeReservedCount({
     required String stationCode,
     required int hour,
-    required Map<String, Map<int, int>> reservedCounts,
+    required Map<String, List<DateTime>> reservedTimes,
   }) {
-    final Map<int, int> stationReservations =
-        reservedCounts[stationCode] ?? <int, int>{};
-    int total = 0;
+    final List<DateTime> stationReservations =
+        reservedTimes[stationCode] ?? <DateTime>[];
+    final DateTime now = DateTime.now();
+    final DateTime targetTime = now.add(Duration(hours: hour));
 
-    stationReservations.forEach((int offsetHour, int count) {
-      if (offsetHour <= hour) {
-        total += count;
-      }
-    });
-
-    return total;
+    return stationReservations.where((DateTime reservationTime) {
+      return reservationTime.isAfter(now) &&
+          !reservationTime.isAfter(targetTime);
+    }).length;
   }
 
   Table _buildReservationCycleTable(List<_ReservationCycleRow> rows) {
@@ -595,6 +776,8 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
           setState(() {
             _selectedStationCode = stationCode;
           });
+
+          _loadRefillLogsForSelectedStation();
         },
       ),
     );
@@ -753,6 +936,131 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
     );
   }
 
+  String _formatRefillTime(DateTime value) {
+    final String month = value.month.toString().padLeft(2, '0');
+    final String day = value.day.toString().padLeft(2, '0');
+    final String hour = value.hour.toString().padLeft(2, '0');
+    final String minute = value.minute.toString().padLeft(2, '0');
+    return '$month/$day $hour:$minute';
+  }
+
+  Widget _buildRefillLogSection() {
+    if (_isRefillLogLoading) {
+      return const Padding(
+        padding: EdgeInsets.all(24),
+        child: Center(child: CircularProgressIndicator(color: _primaryColor)),
+      );
+    }
+
+    if (_refillLogErrorText != null) {
+      return Padding(
+        padding: const EdgeInsets.all(20),
+        child: Text(
+          _refillLogErrorText!,
+          style: const TextStyle(
+            color: Color(0xFF6B7280),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      );
+    }
+
+    if (_refillLogs.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(20),
+        child: Text(
+          'No refill logs for the selected station.',
+          style: TextStyle(
+            color: Color(0xFF6B7280),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Column(
+        children: _refillLogs
+            .map((_RefillLogItem log) {
+              final String workerSummary = <String>[
+                if (log.workerName != null && log.workerName!.isNotEmpty)
+                  log.workerName!,
+                if (log.workerPhone != null && log.workerPhone!.isNotEmpty)
+                  log.workerPhone!,
+                if (log.workerRole != null && log.workerRole!.isNotEmpty)
+                  log.workerRole!,
+              ].join(' · ');
+
+              return Column(
+                children: <Widget>[
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 6,
+                    ),
+                    leading: Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: _stationColumnColor,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      alignment: Alignment.center,
+                      child: const Icon(
+                        Icons.inventory_2_outlined,
+                        color: _primaryColor,
+                      ),
+                    ),
+                    title: Text(
+                      _formatRefillTime(log.refillTime),
+                      style: const TextStyle(
+                        color: Color(0xFF111827),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    subtitle: Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        workerSummary.isEmpty
+                            ? 'Worker information unavailable'
+                            : workerSummary,
+                        style: const TextStyle(color: Color(0xFF4B5563)),
+                      ),
+                    ),
+                    trailing: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: <Widget>[
+                        if (log.refillCount != null)
+                          Text(
+                            '+${log.refillCount} cycles',
+                            style: const TextStyle(
+                              color: _primaryColor,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        if (log.workerId != null)
+                          Text(
+                            'Worker #${log.workerId}',
+                            style: const TextStyle(
+                              color: Color(0xFF6B7280),
+                              fontSize: 12,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (log != _refillLogs.last)
+                    const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                ],
+              );
+            })
+            .toList(growable: false),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final _ReservationCycleRow? selectedReservationCycleRow =
@@ -798,6 +1106,10 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
                               selectedReservationCycleRow,
                             ),
                           ),
+                          const SizedBox(height: 24),
+                          _buildSectionTitle('Refill Logs'),
+                          const SizedBox(height: 10),
+                          _buildSectionFrame(child: _buildRefillLogSection()),
                         ],
                       ),
                     ),
@@ -817,11 +1129,13 @@ class _DashboardState extends _ReservationCycleTableState<Dashboard> {}
 class _StationSeed {
   const _StationSeed({
     required this.stationCode,
+    required this.stationNumber,
     required this.fallbackAvailable,
     required this.fallbackParking,
   });
 
   final String stationCode;
+  final int stationNumber;
   final int fallbackAvailable;
   final int fallbackParking;
 
@@ -908,6 +1222,37 @@ class _ChartPoint {
 
   final String label;
   final int value;
+}
+
+class _RefillLogItem {
+  const _RefillLogItem({
+    required this.refillTime,
+    this.refillCount,
+    this.workerId,
+    this.workerName,
+    this.workerPhone,
+    this.workerRole,
+  });
+
+  final DateTime refillTime;
+  final int? refillCount;
+  final int? workerId;
+  final String? workerName;
+  final String? workerPhone;
+  final String? workerRole;
+
+  factory _RefillLogItem.fromJson(Map<String, dynamic> json) {
+    return _RefillLogItem(
+      refillTime:
+          DateTime.tryParse(json['refill_time']?.toString() ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+      refillCount: int.tryParse(json['refill_count']?.toString() ?? ''),
+      workerId: int.tryParse(json['worker_id']?.toString() ?? ''),
+      workerName: json['worker_name']?.toString(),
+      workerPhone: json['worker_phone']?.toString(),
+      workerRole: json['worker_role']?.toString(),
+    );
+  }
 }
 
 class _ReservationCycleRow {
