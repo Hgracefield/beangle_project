@@ -16,7 +16,7 @@ class WorkerLogin extends StatefulWidget {
 
 class _WorkerLoginState extends State<WorkerLogin> {
 
-  final String url = 'http://192.168.10.50:8001/worker';
+  final String url = 'http://127.0.0.1:8000/worker';
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
@@ -119,7 +119,7 @@ class _WorkerLoginState extends State<WorkerLogin> {
             children: [
               Icon(Icons.directions_bike, size: 60, color: Color(0xFF49992E)),
               SizedBox(height: 10),
-              Text("빙글", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+              Text("빙글 - 관리자", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
 
               SizedBox(height: 30),
 
@@ -146,11 +146,6 @@ class _WorkerLoginState extends State<WorkerLogin> {
                 text: "로그인",
                 onPressed: _onLoginPressed,
               ),
-
-              SizedBox(height: 16),
-              Text("또는"),
-
-              SizedBox(height: 16),
 
             ],
           ),

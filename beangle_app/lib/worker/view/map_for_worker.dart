@@ -15,6 +15,13 @@ class MapForWorkerPage extends StatefulWidget {
   State<MapForWorkerPage> createState() => _MapForWorkerPageState();
 }
 
+class _FlowSummary {
+  const _FlowSummary({required this.inflow, required this.outflow});
+
+  final double inflow;
+  final double outflow;
+}
+
 class _MapForWorkerPageState extends State<MapForWorkerPage> {
 
   // === Property === 
@@ -109,11 +116,17 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
                       ),
                       MarkerLayer(
                         markers: visibleStations.map((station) {
-                          final neededCount = _neededBikeCountForFollowing(
+                          final nowHour =
+                              DateTime(now.year, now.month, now.day, now.hour);
+                          final flowToNext = _cumulativeFlowBetween(
+                            station.id,
+                            nowHour,
+                            nextRelocationTime,
+                          );
+                          final flowNextToFollowing = _cumulativeFlowBetween(
                             station.id,
                             nextRelocationTime,
                             followingRelocationTime,
-                            station.parkingCount,
                           );
                           return Marker(
                             point: station.location,
@@ -124,7 +137,10 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
                               currentTimeLabel: _formatHourLabel(now),
                               nextRelocationLabel: nextRelocationLabel,
                               currentCount: station.parkingCount,
-                              neededCount: neededCount,
+                              cumulativeInflow: flowNextToFollowing?.inflow,
+                              cumulativeOutflow: flowNextToFollowing?.outflow,
+                              preInflow: flowToNext?.inflow,
+                              preOutflow: flowToNext?.outflow,
                             ),
                           );
                         }).toList(),
@@ -273,7 +289,7 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
     return isAm ? '오전 ${displayHour}시' : '오후 ${displayHour}시';
   }
 
-  double? _lookupNetFlow(String stationId, DateTime target) {
+  _FlowSummary? _lookupFlowSummary(String stationId, DateTime target) {
     final stationData = _predictionData[stationId];
     if (stationData is! Map) {
       return null;
@@ -300,49 +316,37 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
       return null;
     }
 
-    final netFlow = hourData['net_flow'];
-    // print('netflow : $netFlow');
-    if (netFlow is num) {
-      return netFlow.toDouble();
+    final inflow = hourData['inflow'];
+    final outflow = hourData['outflow'];
+    final inflowValue =
+        inflow is num ? inflow.toDouble() : double.tryParse(inflow?.toString() ?? '');
+    final outflowValue =
+        outflow is num ? outflow.toDouble() : double.tryParse(outflow?.toString() ?? '');
+    if (inflowValue == null && outflowValue == null) {
+      return null;
     }
-
-    return double.tryParse(netFlow?.toString() ?? '');
+    return _FlowSummary(inflow: inflowValue ?? 0, outflow: outflowValue ?? 0);
   }
 
-  double? _cumulativeNetFlowBetween(
+  _FlowSummary? _cumulativeFlowBetween(
     String stationId,
     DateTime start,
     DateTime end,
   ) {
-    double sum = 0;
+    double inflowSum = 0;
+    double outflowSum = 0;
     var found = false;
     for (var cursor = start;
         cursor.isBefore(end);
         cursor = cursor.add(const Duration(hours: 1))) {
-      final netFlow = _lookupNetFlow(stationId, cursor);
-      if (netFlow != null) {
-        sum += netFlow;
+      final flow = _lookupFlowSummary(stationId, cursor);
+      if (flow != null) {
+        inflowSum += flow.inflow;
+        outflowSum += flow.outflow;
         found = true;
       }
     }
-    return found ? sum : null;
-  }
-
-  int? _neededBikeCountForFollowing(
-    String stationId,
-    DateTime target,
-    DateTime followingTarget,
-    int currentCount,
-  ) {
-    final followingNetFlow = _cumulativeNetFlowBetween(
-      stationId,
-      target,
-      followingTarget,
-    );
-    if (followingNetFlow == null) {
-      return null;
-    }
-    return followingNetFlow.round() - currentCount;
+    return found ? _FlowSummary(inflow: inflowSum, outflow: outflowSum) : null;
   }
 
   Future<void> _loadPredictionData() async {

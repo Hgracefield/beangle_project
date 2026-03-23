@@ -4,6 +4,7 @@ import 'package:beangle_app/auth/google_auth_button.dart';
 import 'package:beangle_app/auth/google_auth_service.dart';
 import 'package:beangle_app/auth/primaryButton.dart';
 import 'package:beangle_app/user/map_for_user.dart';
+import 'package:beangle_app/worker/view/worker_login.dart';
 import 'package:flutter/material.dart';
 import 'package:beangle_app/app_shell.dart';
 import 'package:get/get.dart';
@@ -216,7 +217,11 @@ class _AuthPageState extends State<AuthPage> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.directions_bike, size: 60, color: Color(0xFF49992E)),
+              GestureDetector(
+                onTap: () {
+                  Get.to(WorkerLogin());
+                },
+                child: Icon(Icons.directions_bike, size: 60, color: Color(0xFF49992E))),
               SizedBox(height: 10),
               Text("빙글", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
 
