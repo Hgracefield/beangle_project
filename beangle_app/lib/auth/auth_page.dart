@@ -120,7 +120,7 @@ class _AuthPageState extends State<AuthPage> {
           if (!mounted) {
             return;
           }
-          Get.offNamed(AppRoutes.test);
+          Get.to(AuthPage());
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text("이메일 또는 비밀번호가 올바르지 않아요.")),
@@ -188,7 +188,7 @@ class _AuthPageState extends State<AuthPage> {
           if (!mounted) {
             return;
           }
-          Get.offNamed(AppRoutes.test);
+          Get.to(AuthPage());
           return;
         }
       }

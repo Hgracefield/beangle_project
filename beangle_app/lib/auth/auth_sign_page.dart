@@ -1,9 +1,11 @@
+import 'package:beangle_app/auth/auth_page.dart';
 import 'package:beangle_app/auth/custom_textfield.dart';
 import 'package:beangle_app/auth/google_auth_button.dart';
 import 'package:beangle_app/auth/google_auth_service.dart';
 import 'package:beangle_app/auth/primaryButton.dart';
 import 'package:flutter/material.dart';
 import 'package:beangle_app/app_shell.dart';
+import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
@@ -187,7 +189,7 @@ class _AuthSignPageState extends State<AuthSignPage> {
           if (!mounted) {
             return;
           }
-          Navigator.of(context).pushReplacementNamed(AppRoutes.test);
+          Get.to(AuthPage());
           return;
         }
       }
