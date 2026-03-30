@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:beangle_app/auth/auth_page.dart';
-import 'package:beangle_app/reservation/model/reservation_api.dart';
-import 'package:beangle_app/reservation/model/reservation_info.dart';
-import 'package:beangle_app/reservation/reservation.dart';
-import 'package:beangle_app/user/user_profile_page.dart';
+import 'package:beangle_app/view/auth/auth_page.dart';
+import 'package:beangle_app/model/reservation_api.dart';
+import 'package:beangle_app/model/reservation_info.dart';
+import 'package:beangle_app/view/user/reservation.dart';
+import 'package:beangle_app/view/user/user_profile_page.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';

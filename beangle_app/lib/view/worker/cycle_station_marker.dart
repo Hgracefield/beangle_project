@@ -1,8 +1,8 @@
 import 'package:beangle_app/common/common_color.dart';
-import 'package:beangle_app/worker/model/cycle_station.dart';
-import 'package:beangle_app/worker/model/work_api.dart';
-import 'package:beangle_app/worker/model/work_record.dart';
-import 'package:beangle_app/worker/view/worker_theme.dart';
+import 'package:beangle_app/model/cycle_station.dart';
+import 'package:beangle_app/model/work_api.dart';
+import 'package:beangle_app/model/work_record.dart';
+import 'package:beangle_app/view/worker/worker_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:get_storage/get_storage.dart';
 
