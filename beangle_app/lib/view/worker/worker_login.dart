@@ -1,7 +1,7 @@
-import 'package:beangle_app/auth/custom_textfield.dart';
-import 'package:beangle_app/auth/primaryButton.dart';
-import 'package:beangle_app/view/restitutor/dashboard.dart';
-import 'package:beangle_app/worker/view/map_for_worker.dart';
+import 'package:beangle_app/view/auth/custom_textfield.dart';
+import 'package:beangle_app/widgets/primaryButton.dart';
+import 'package:beangle_app/view/worker/dashboard.dart';
+import 'package:beangle_app/view/worker/map_for_worker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;

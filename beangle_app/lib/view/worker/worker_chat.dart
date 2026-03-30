@@ -1,4 +1,4 @@
-import 'package:beangle_app/worker/view/worker_theme.dart';
+import 'package:beangle_app/view/worker/worker_theme.dart';
 import 'package:flutter/material.dart';
 
 class WorkerChatPage extends StatelessWidget {

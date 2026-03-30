@@ -19,7 +19,7 @@
 // ===============================================
 import 'dart:convert';
 
-import 'package:beangle_app/auth/auth_page.dart';
+import 'package:beangle_app/view/auth/auth_page.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';

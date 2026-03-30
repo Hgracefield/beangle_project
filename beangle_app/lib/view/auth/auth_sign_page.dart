@@ -1,8 +1,8 @@
-import 'package:beangle_app/auth/custom_textfield.dart';
-import 'package:beangle_app/auth/google_auth_button.dart';
-import 'package:beangle_app/auth/google_auth_service.dart';
-import 'package:beangle_app/auth/primaryButton.dart';
-import 'package:beangle_app/auth/auth_page.dart';
+import 'package:beangle_app/view/auth/custom_textfield.dart';
+import 'package:beangle_app/view/auth/google_auth_button.dart';
+import 'package:beangle_app/view/auth/google_auth_service.dart';
+import 'package:beangle_app/widgets/primaryButton.dart';
+import 'package:beangle_app/view/auth/auth_page.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:http/http.dart' as http;

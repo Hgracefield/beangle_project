@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:beangle_app/worker/model/work_record.dart';
+import 'package:beangle_app/model/work_record.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 

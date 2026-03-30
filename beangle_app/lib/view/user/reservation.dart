@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:beangle_app/reservation/model/reservation_api.dart';
-import 'package:beangle_app/reservation/model/reservation_info.dart';
+import 'package:beangle_app/model/reservation_api.dart';
+import 'package:beangle_app/model/reservation_info.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
