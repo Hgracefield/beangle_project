@@ -1,7 +1,7 @@
 import 'dart:convert';
 
-import 'package:beangle_app/auth/custom_textfield.dart';
-import 'package:beangle_app/auth/primaryButton.dart';
+import 'package:beangle_app/view/auth/custom_textfield.dart';
+import 'package:beangle_app/widgets/primaryButton.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get_storage/get_storage.dart';

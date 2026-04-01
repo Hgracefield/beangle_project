@@ -1,11 +1,11 @@
 import 'dart:convert';
-import 'package:beangle_app/app_shell.dart';
+import 'package:beangle_app/view/auth/auth_page.dart';
 import 'package:beangle_app/common/common_color.dart';
-import 'package:beangle_app/worker/model/work_api.dart';
-import 'package:beangle_app/worker/model/work_record.dart';
-import 'package:beangle_app/worker/view/cycle_station_marker.dart';
-import 'package:beangle_app/worker/view/worker_theme.dart';
-import 'package:beangle_app/worker/model/cycle_station.dart';
+import 'package:beangle_app/model/work_api.dart';
+import 'package:beangle_app/model/work_record.dart';
+import 'package:beangle_app/view/worker/cycle_station_marker.dart';
+import 'package:beangle_app/view/worker/worker_theme.dart';
+import 'package:beangle_app/model/cycle_station.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -103,7 +103,6 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
                 icon: const Icon(Icons.refresh, color: Colors.white),
                 tooltip: '새로고침',
               ),
-            // child: GlobalRouteMenu(currentRoute: AppRoutes.workerMap),
           ),
         ],
       ),
@@ -607,6 +606,6 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
       _workerId = null;
     });
 
-    Get.offAllNamed(AppRoutes.auth);
+    Get.offAll(() => const AuthPage());
   }
 }

@@ -15,12 +15,11 @@ app.add_middleware(
 )
 
 db = mysql.connector.connect(
-    host="127.0.0.1",
-    user="root",
-    password="Qwer1234!",
+    host="ep-cycle.chaeqe2g4mnm.ap-northeast-2.rds.amazonaws.com",
+    user="admin",
+    password="qwer1234",
     database="cycle-predict",
-    port=3307,
-    auth_plugin='mysql_native_password' 
+    port=3306,
 )
 
 cursor = db.cursor()
@@ -36,7 +35,7 @@ class GoogleAuthFastAPI(BaseModel):
     name: str | None = None
     idToken: str
 
-@app.post("/signup")
+@app.post("/auth/signup")
 def signup(req: AuthFastAPI):
 
     query = """
@@ -49,7 +48,7 @@ def signup(req: AuthFastAPI):
 
     return {"success": True}
 
-@app.post("/login")
+@app.post("/auth/login")
 def login(req: AuthFastAPI):
 
     query = "SELECT * FROM user WHERE user_email=%s AND user_password=%s"
@@ -61,7 +60,7 @@ def login(req: AuthFastAPI):
     else:
         return {"success": False}
 
-@app.post("/google_login")
+@app.post("/auth/google_login")
 def google_login(req: GoogleAuthFastAPI):
     # TODO: Verify req.idToken with Google before trusting it.
     try:
@@ -149,4 +148,4 @@ def update_user(user_id: int, req: AuthFastAPI):
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="172.16.250.217", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8000)

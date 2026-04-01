@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:beangle_app/reservation/model/reservation_info.dart';
+import 'package:beangle_app/model/reservation_info.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
@@ -144,7 +144,7 @@ class ReservationApi {
       is_cancel: 1,
       imagePath: reservation.imagePath,
     );
-    final uri = Uri.parse('$baseUrl/reservation/delete');
+    final uri = Uri.parse('$baseUrl/reservation/cancel');
     final response = await _client.post(
       uri,
       headers: {
@@ -156,6 +156,26 @@ class ReservationApi {
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception('Failed to delete reservation');
+    }
+
+    final Map<String, dynamic> json =
+        jsonDecode(response.body) as Map<String, dynamic>;
+    return json['result'] as int? ?? 0;
+  }
+
+  Future<int> hardDeleteReservation(ReservationInfo reservation) async {
+    final uri = Uri.parse('$baseUrl/reservation/delete');
+    final response = await _client.post(
+      uri,
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(reservation.toJson()),
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('Failed to hard delete reservation');
     }
 
     final Map<String, dynamic> json =

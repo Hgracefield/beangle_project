@@ -155,6 +155,28 @@ async def update(data: ReservationModel):
        if conn is not None:
          conn.close()
 
+@router.post('/cancel')
+async def cancel(data: ReservationModel):
+    conn = None
+    try:
+        print('=== cancel Reservation ===')
+        conn = connect()
+        curs = conn.cursor()
+
+        sql = 'update reservation set is_cancel=%s where reservation_id=%s and user_id=%s'
+        curs.execute(sql,[1, data.reservation_id, data.user_id])
+        conn.commit()
+        return {'result':1}
+    except Exception as err:
+       if conn is not None:
+         conn.rollback()
+       print('=== ERROR(CANCEL): ')
+       print(err)
+       return {'result':0}
+    finally:
+       if conn is not None:
+         conn.close()
+
 @router.post('/delete')
 async def delete(data: ReservationModel):
     conn = None
@@ -163,8 +185,8 @@ async def delete(data: ReservationModel):
         conn = connect()
         curs = conn.cursor()
 
-        sql = 'update reservation set is_cancel=%s where reservation_id=%s and user_id=%s'
-        curs.execute(sql,[1, data.reservation_id, data.user_id])
+        sql = 'delete from reservation where reservation_id=%s and user_id=%s'
+        curs.execute(sql, [data.reservation_id, data.user_id])
         conn.commit()
         return {'result':1}
     except Exception as err:
