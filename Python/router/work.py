@@ -12,7 +12,7 @@ class WorkState(BaseModel):
     worker_id: int
     station_id: int
     count: int
-    time: str
+    worktime: str
 
 def connect():
     return pymysql.connect(
@@ -34,11 +34,11 @@ async def insert(work: WorkState):
         select count(*)
         from work
         where station_id = %s
-          and time = %s
+          and worktime = %s
         """
         curs.execute(duplicate_sql, (
             work.station_id,
-            work.time
+            work.worktime
         ))
         duplicate_count = curs.fetchone()[0]
 
@@ -48,14 +48,14 @@ async def insert(work: WorkState):
 
         sql = """
         insert into work
-        (worker_id, station_id, count, time)
-        values (%s, %s, %s, %s)
+        (worker_id, station_id, count, worktime, timestamp)
+        values (%s, %s, %s, %s, now())
         """
         curs.execute(sql, (
             work.worker_id,
             work.station_id,
             work.count,
-            work.time
+            work.worktime
         ))
         conn.commit()
         return {'result': 'OK'}
@@ -76,13 +76,15 @@ async def update(work: WorkState):
             worker_id = %s,
             station_id = %s,
             count = %s,
-            time = now()
+            worktime = %s,
+            timestamp = now()
         where work_id = %s
         """
         curs.execute(sql, (
             work.worker_id,
             work.station_id,
             work.count,
+            work.
             work.work_id
         ))
         conn.commit()
@@ -108,7 +110,8 @@ async def select():
             'worker_id': row[1],
             'station_id': row[2],
             'count': row[3],
-            'time': row[4]
+            'worktime': row[4],
+            'timestamp':row[5]
         } for row in rows]
 
         return {'results': result}

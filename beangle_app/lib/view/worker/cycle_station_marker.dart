@@ -87,7 +87,7 @@ class CycleStationMarker extends StatelessWidget {
     try {
       final List<WorkRecord> works = await _workApi.fetchWorks();
       final bool alreadyWorked = works.any((WorkRecord item) {
-        return item.stationId == stationId && _isSameSlot(item.time, targetTime);
+        return item.stationId == stationId && _isSameSlot(item.worktime, targetTime);
       });
 
       if (alreadyWorked) {
@@ -103,7 +103,7 @@ class CycleStationMarker extends StatelessWidget {
         workerId: workerId,
         stationId: stationId,
         count: workCount,
-        time: targetTime,
+        worktime: targetTime,
       );
 
       final int result = await _workApi.insertWork(payload);
@@ -185,10 +185,10 @@ class CycleStationMarker extends StatelessWidget {
                     ? actionDelta
                     : limitedRecoveryCount ?? actionDelta.abs();
         final DateTime activationStart = nextRelocationTime.subtract(
-          const Duration(hours: 5),
+          const Duration(hours: 1),
         );
         final DateTime activationEnd = nextRelocationTime.add(
-          const Duration(hours: 5),
+          const Duration(hours: 1),
         );
         final bool isActionWindowActive =
             !currentTime.isBefore(activationStart) &&

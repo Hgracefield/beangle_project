@@ -10,7 +10,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:get/get.dart';
-import 'package:get/get_core/get_core.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
@@ -379,7 +378,7 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
       final List<WorkRecord> works = await _workApi.fetchWorks();
       final Set<int> completedIds =
           works
-              .where((WorkRecord item) => _isSameSlot(item.time, slotTime))
+              .where((WorkRecord item) => _isSameSlot(item.worktime, slotTime))
               .map((WorkRecord item) => item.stationId)
               .toSet();
 
@@ -440,7 +439,7 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
     final hour = target.hour;
     final isAm = hour < 12;
     final displayHour = hour % 12 == 0 ? 12 : hour % 12;
-    return isAm ? '오전 ${displayHour}시' : '오후 ${displayHour}시';
+    return isAm ? '오전 $displayHour시' : '오후 $displayHour시';
   }
 
   _FlowSummary? _lookupFlowSummary(String stationId, DateTime target) {
