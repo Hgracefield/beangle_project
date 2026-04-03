@@ -18,10 +18,15 @@
 //   - Kept refill log loading as a dashboard-side best-effort integration.
 // ===============================================
 import 'dart:convert';
+import 'dart:async';
 
+import 'package:beangle_app/model/chat_service.dart';
 import 'package:beangle_app/model/work_api.dart';
 import 'package:beangle_app/model/work_record.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:beangle_app/view/auth/auth_page.dart';
+import 'package:beangle_app/view/worker/worker_chat_list.dart';
+import 'package:beangle_app/settings/firebase_bootstrap.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -120,6 +125,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
   final WorkApi _workApi = WorkApi();
 
   VoidCallback? _cancelReservationStorageListener;
+  StreamSubscription? _chatRoomsSubscription;
   Map<String, dynamic> _predictionData = const <String, dynamic>{};
   Map<String, _StationAvailabilitySnapshot> _stationAvailabilityByCode =
       const <String, _StationAvailabilitySnapshot>{};
@@ -131,6 +137,9 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
   bool _isLoading = true;
   bool _isRefillLogLoading = false;
   int _refillLogRequestToken = 0;
+  bool _hasSeenInitialAdminRoomSnapshot = false;
+  int _lastAdminUnreadCount = 0;
+  String? _lastAdminNotifiedMessage;
 
   @override
   void initState() {
@@ -144,11 +153,13 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
       (_) => _rebuildReservationCycleRows(),
     );
 
+    _startAdminChatNotifications();
     _initializeReservationCycleTable();
   }
 
   @override
   void dispose() {
+    _chatRoomsSubscription?.cancel();
     _cancelReservationStorageListener?.call();
     super.dispose();
   }
@@ -169,6 +180,148 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
       return;
     }
     Get.offAll(() => const AuthPage());
+  }
+
+  void _openChatRooms() {
+    Get.to(
+      () => Scaffold(
+        appBar: AppBar(
+          title: const Text(
+            '채팅 리스트',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ),
+        body: const SafeArea(child: WorkerChatListPage()),
+      ),
+    );
+  }
+
+  void _startAdminChatNotifications() {
+    if (!FirebaseBootstrap.isReady) {
+      return;
+    }
+
+    _chatRoomsSubscription = ChatService.watchRooms().listen((snapshot) {
+      final List<QueryDocumentSnapshot<Map<String, dynamic>>> docs =
+          snapshot.docs;
+      final int unreadCount = docs.fold<int>(
+        0,
+        (int sum, QueryDocumentSnapshot<Map<String, dynamic>> doc) =>
+            sum + ChatService.unreadCountForRole(doc.data(), 'admin'),
+      );
+
+      if (_hasSeenInitialAdminRoomSnapshot &&
+          unreadCount > _lastAdminUnreadCount &&
+          mounted) {
+        Map<String, dynamic>? incomingData;
+        for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in docs) {
+          final Map<String, dynamic> data = doc.data();
+          if (ChatService.unreadCountForRole(data, 'admin') > 0 &&
+              data['lastSenderRole']?.toString() == 'user') {
+            incomingData = data;
+            break;
+          }
+        }
+
+        final String message = incomingData?['lastMessage']?.toString() ?? '';
+        final String userName =
+            incomingData?['userName']?.toString().trim().isNotEmpty == true
+            ? incomingData!['userName'].toString()
+            : '사용자';
+
+        if (message.isNotEmpty && message != _lastAdminNotifiedMessage) {
+          _lastAdminNotifiedMessage = message;
+          _showIncomingChatBanner(
+            title: '$userName 님의 새 메시지',
+            message: message,
+            onOpen: _openChatRooms,
+          );
+        }
+      }
+
+      _hasSeenInitialAdminRoomSnapshot = true;
+      _lastAdminUnreadCount = unreadCount;
+    });
+  }
+
+  void _showIncomingChatBanner({
+    required String title,
+    required String message,
+    required VoidCallback onOpen,
+  }) {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..clearMaterialBanners()
+      ..showMaterialBanner(
+        MaterialBanner(
+          content: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(
+                title,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 4),
+              Text(message, maxLines: 2, overflow: TextOverflow.ellipsis),
+            ],
+          ),
+          leading: const Icon(Icons.chat_bubble_outline),
+          backgroundColor: const Color(0xFFF4F8EF),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () {
+                messenger.clearMaterialBanners();
+                onOpen();
+              },
+              child: const Text('열기'),
+            ),
+            TextButton(
+              onPressed: messenger.clearMaterialBanners,
+              child: const Text('닫기'),
+            ),
+          ],
+        ),
+      );
+
+    Future<void>.delayed(const Duration(seconds: 4), () {
+      if (mounted) {
+        messenger.clearMaterialBanners();
+      }
+    });
+  }
+
+  Widget _buildChatActionButton() {
+    if (!FirebaseBootstrap.isReady) {
+      return IconButton(
+        onPressed: _openChatRooms,
+        tooltip: '채팅',
+        icon: const Icon(Icons.chat_bubble_outline),
+      );
+    }
+
+    return StreamBuilder(
+      stream: ChatService.watchRooms(),
+      builder: (context, snapshot) {
+        final int unreadCount = snapshot.hasData
+            ? snapshot.data!.docs.fold<int>(
+                0,
+                (int sum, QueryDocumentSnapshot<Map<String, dynamic>> doc) =>
+                    sum + ChatService.unreadCountForRole(doc.data(), 'admin'),
+              )
+            : 0;
+
+        return IconButton(
+          onPressed: _openChatRooms,
+          tooltip: '채팅',
+          icon: Badge(
+            isLabelVisible: unreadCount > 0,
+            label: Text(unreadCount > 99 ? '99+' : '$unreadCount'),
+            child: const Icon(Icons.chat_bubble_outline),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _initializeReservationCycleTable() async {
@@ -1301,6 +1454,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
           style: TextStyle(fontWeight: FontWeight.w700),
         ),
         actions: <Widget>[
+          _buildChatActionButton(),
           IconButton(
             onPressed: _logout,
             tooltip: '로그아웃',
