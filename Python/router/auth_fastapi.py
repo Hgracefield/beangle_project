@@ -17,7 +17,7 @@ app.add_middleware(
 db = mysql.connector.connect(
     host="ep-cycle.chaeqe2g4mnm.ap-northeast-2.rds.amazonaws.com",
     user="admin",
-    password="qwer1234",
+    password="0513webapp!",
     database="cycle-predict",
     port=3306,
 )
