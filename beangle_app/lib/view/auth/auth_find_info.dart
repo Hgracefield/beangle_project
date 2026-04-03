@@ -4,7 +4,35 @@ import 'package:beangle_app/view/auth/custom_textfield.dart';
 import 'package:beangle_app/widgets/primaryButton.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+
+class _PhoneNumberFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final String digits = newValue.text.replaceAll(RegExp(r'\D'), '');
+    final String trimmed = digits.length > 11
+        ? digits.substring(0, 11)
+        : digits;
+
+    final StringBuffer buffer = StringBuffer();
+    for (int i = 0; i < trimmed.length; i++) {
+      if (i == 3 || i == 7) {
+        buffer.write('-');
+      }
+      buffer.write(trimmed[i]);
+    }
+
+    final String formatted = buffer.toString();
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+}
 
 class AuthFindInfoPage extends StatefulWidget {
   const AuthFindInfoPage({super.key});
@@ -75,6 +103,7 @@ class _FindIdTab extends StatefulWidget {
 class _FindIdTabState extends State<_FindIdTab> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
+  final _PhoneNumberFormatter _phoneNumberFormatter = _PhoneNumberFormatter();
   bool _isLoading = false;
   String? _resultEmail;
 
@@ -178,11 +207,12 @@ class _FindIdTabState extends State<_FindIdTab> {
         ),
         const SizedBox(height: 16),
         CustomTextField(
-          hint: '전화번호 입력',
+          hint: '010-0000-0000',
           icon: Icons.phone,
           controller: _phoneController,
           keyboardType: TextInputType.phone,
           textInputAction: TextInputAction.done,
+          inputFormatters: <TextInputFormatter>[_phoneNumberFormatter],
         ),
         const SizedBox(height: 24),
         PrimaryButton(
@@ -225,6 +255,7 @@ class _ResetPasswordTabState extends State<_ResetPasswordTab> {
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _passwordConfirmController =
       TextEditingController();
+  final _PhoneNumberFormatter _phoneNumberFormatter = _PhoneNumberFormatter();
 
   bool _isSubmitting = false;
   bool _isVerified = false;
@@ -426,11 +457,12 @@ class _ResetPasswordTabState extends State<_ResetPasswordTab> {
         ),
         const SizedBox(height: 16),
         CustomTextField(
-          hint: '전화번호 입력',
+          hint: '010-0000-0000',
           icon: Icons.phone,
           controller: _phoneController,
           keyboardType: TextInputType.phone,
           textInputAction: TextInputAction.done,
+          inputFormatters: <TextInputFormatter>[_phoneNumberFormatter],
         ),
         const SizedBox(height: 24),
         PrimaryButton(
