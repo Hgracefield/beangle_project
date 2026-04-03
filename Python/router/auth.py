@@ -38,6 +38,36 @@ class GoogleAuthFastAPI(BaseModel):
     name: str | None = None
     idToken: str
 
+class FindIdRequest(BaseModel):
+    name: str
+    phone: str
+
+class PasswordResetVerifyRequest(BaseModel):
+    email: str
+    name: str
+    phone: str
+
+class PasswordResetRequest(BaseModel):
+    email: str
+    name: str
+    phone: str
+    new_password: str
+
+def _normalize_phone(phone: str) -> str:
+    return ''.join(ch for ch in phone if ch.isdigit())
+
+def _mask_email(email: str) -> str:
+    if '@' not in email:
+        return email
+
+    local, domain = email.split('@', 1)
+    if len(local) <= 2:
+        masked_local = local[0] + '*' * max(len(local) - 1, 0)
+    else:
+        masked_local = local[:3] + '*' * (len(local) - 3)
+
+    return f'{masked_local}@{domain}'
+
 @router.post("/signup")
 def signup(req: AuthFastAPI):
 
@@ -86,3 +116,82 @@ def google_login(req: GoogleAuthFastAPI):
         print("google_login error:", e)
         return {"success": False, "error": str(e)}
 
+@router.post("/find-id")
+def find_id(req: FindIdRequest):
+    try:
+        query = """
+        SELECT user_email, user_phone
+        FROM user
+        WHERE user_name=%s
+        """
+        cursor.execute(query, (req.name,))
+        users = cursor.fetchall()
+
+        normalized_phone = _normalize_phone(req.phone)
+        for user_email, user_phone in users:
+            if _normalize_phone(user_phone or '') == normalized_phone:
+                return {
+                    "success": True,
+                    "email": user_email,
+                    "masked_email": _mask_email(user_email or ''),
+                }
+
+        return {"success": False, "error": "user_not_found"}
+    except Exception as e:
+        print("find_id error:", e)
+        return {"success": False, "error": str(e)}
+
+@router.post("/verify-user-for-password-reset")
+def verify_user_for_password_reset(req: PasswordResetVerifyRequest):
+    try:
+        query = """
+        SELECT user_id, user_phone
+        FROM user
+        WHERE user_email=%s AND user_name=%s
+        """
+        cursor.execute(query, (req.email, req.name))
+        user = cursor.fetchone()
+
+        if not user:
+            return {"success": False, "error": "user_not_found"}
+
+        if _normalize_phone(user[1] or '') != _normalize_phone(req.phone):
+            return {"success": False, "error": "user_not_found"}
+
+        return {"success": True}
+    except Exception as e:
+        print("verify_user_for_password_reset error:", e)
+        return {"success": False, "error": str(e)}
+
+@router.post("/reset-password")
+def reset_password(req: PasswordResetRequest):
+    try:
+        if len(req.new_password.strip()) < 6:
+            return {"success": False, "error": "password_too_short"}
+
+        query = """
+        SELECT user_id, user_phone
+        FROM user
+        WHERE user_email=%s AND user_name=%s
+        """
+        cursor.execute(query, (req.email, req.name))
+        user = cursor.fetchone()
+
+        if not user:
+            return {"success": False, "error": "user_not_found"}
+
+        if _normalize_phone(user[1] or '') != _normalize_phone(req.phone):
+            return {"success": False, "error": "user_not_found"}
+
+        update_query = """
+        UPDATE user
+        SET user_password=%s
+        WHERE user_id=%s
+        """
+        cursor.execute(update_query, (req.new_password, user[0]))
+        db.commit()
+        return {"success": True}
+    except Exception as e:
+        db.rollback()
+        print("reset_password error:", e)
+        return {"success": False, "error": str(e)}
