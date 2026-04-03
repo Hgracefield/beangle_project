@@ -70,16 +70,27 @@ def _mask_email(email: str) -> str:
 
 @router.post("/signup")
 def signup(req: AuthFastAPI):
+    try:
+        duplicate_query = "SELECT user_id FROM user WHERE user_email=%s"
+        cursor.execute(duplicate_query, (req.email,))
+        existing_user = cursor.fetchone()
 
-    query = """
-    INSERT INTO user (user_name, user_email, user_password, user_phone)
-    VALUES (%s, %s, %s, %s)
-    """
+        if existing_user:
+            return {"success": False, "error": "email_already_exists"}
 
-    cursor.execute(query, (req.name, req.email, req.password, req.phone))
-    db.commit()
+        query = """
+        INSERT INTO user (user_name, user_email, user_password, user_phone)
+        VALUES (%s, %s, %s, %s)
+        """
 
-    return {"success": True}
+        cursor.execute(query, (req.name, req.email, req.password, req.phone))
+        db.commit()
+
+        return {"success": True}
+    except Exception as e:
+        db.rollback()
+        print("signup error:", e)
+        return {"success": False, "error": str(e)}
 
 @router.post("/login")
 def login(req: AuthFastAPI):
