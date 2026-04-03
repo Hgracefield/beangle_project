@@ -4,6 +4,7 @@ import 'package:beangle_app/common/common_color.dart';
 import 'package:beangle_app/model/work_api.dart';
 import 'package:beangle_app/model/work_record.dart';
 import 'package:beangle_app/view/worker/cycle_station_marker.dart';
+import 'package:beangle_app/view/worker/worker_chat_list.dart';
 import 'package:beangle_app/view/worker/worker_theme.dart';
 import 'package:beangle_app/model/cycle_station.dart';
 import 'package:flutter/material.dart';
@@ -29,8 +30,7 @@ class _FlowSummary {
 }
 
 class _MapForWorkerPageState extends State<MapForWorkerPage> {
-
-  // === Property === 
+  // === Property ===
   static const String _workerIdStorageKey = 'worker_id';
   static const String _themeStorageKey = 'worker_map_dark_theme';
 
@@ -45,14 +45,13 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
   ]; // 보여줄 스테이션 번호
   final _apiKey = '595975485377617236307a746f5179'; // 따릉이 api key
 
-  final  String _predictionAssetPath =
+  final String _predictionAssetPath =
       'assets/data/station_hourly_predictions.json';
 
   bool _isLoading = true; // 로딩 완료 여부
   String? _errorMessage; // 에러 메시지
   List<CycleStation> _stations = const [];
   Set<int> _completedStationIds = <int>{};
-  String? _workerId = '';
   bool isDarkTheme = false;
   final GetStorage _storage = GetStorage();
   final WorkApi _workApi = WorkApi();
@@ -64,10 +63,7 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
     _loadPredictionData();
     _loadStations();
     _loadCompletedStations();
-    _workerId = _storage.read(_workerIdStorageKey)?.toString();
   }
-
-  
 
   @override
   Widget build(BuildContext context) {
@@ -75,13 +71,15 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
     final now = DateTime.now();
     final nextRelocationTime = _nextRelocationTime(now);
     final nextRelocationLabel = _formatRelocationLabel(nextRelocationTime);
-    final followingRelocationTime =
-        _followingRelocationTime(nextRelocationTime);
-    final followingRelocationLabel =
-        _formatRelocationLabel(followingRelocationTime);
+    final followingRelocationTime = _followingRelocationTime(
+      nextRelocationTime,
+    );
+    final followingRelocationLabel = _formatRelocationLabel(
+      followingRelocationTime,
+    );
     // print(nextRelocationLabel);
     return Scaffold(
-       appBar: AppBar(
+      appBar: AppBar(
         backgroundColor: workerThemeColor,
         foregroundColor: Colors.white,
         elevation: 0,
@@ -97,280 +95,333 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
         actions: [
           Padding(
             padding: EdgeInsets.only(right: 8),
-            child:  IconButton(
-                onPressed: _isLoading ? null : _loadStations,
-                icon: const Icon(Icons.refresh, color: Colors.white),
-                tooltip: '새로고침',
-              ),
+            child: IconButton(
+              onPressed: _isLoading ? null : _loadStations,
+              icon: const Icon(Icons.refresh, color: Colors.white),
+              tooltip: '새로고침',
+            ),
           ),
         ],
       ),
       drawer: Drawer(
-          backgroundColor: CommonColor.panelColor(isDarkTheme),
-          child: ListView(
-            padding: EdgeInsets.zero,
-            children: [
-              DrawerHeader(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [CommonColor.cardAccent(), CommonColor.cardAccent().withValues(alpha: 0.82)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 52,
-                          height: 52,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.18),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.person,
-                            color: Colors.white,
-                            size: 28,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '',
-                                // _userName.isEmpty ? '게스트 사용자' : _userName,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+        backgroundColor: CommonColor.panelColor(isDarkTheme),
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            DrawerHeader(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    CommonColor.cardAccent(),
+                    CommonColor.cardAccent().withValues(alpha: 0.82),
                   ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
               ),
-              ListTile(
-                leading: Icon(Icons.brightness_4, color: CommonColor.primaryTextColor(isDarkTheme)),
-                title: Text('다크테마', style: TextStyle(color: CommonColor.primaryTextColor(isDarkTheme))),
-                trailing: Switch(
-                  value: isDarkTheme,
-                  onChanged: (bool value) {
-                    setState(() {
-                      isDarkTheme = value;
-                    });
-                    _persistTheme();
-                  },
-                ),
-              ),
-              
-              ListTile(
-                leading: Icon(Icons.logout, color: CommonColor.primaryTextColor(isDarkTheme)),
-                title: Text('로그아웃', style: TextStyle(color: CommonColor.primaryTextColor(isDarkTheme))),
-                onTap: () async {
-                  Navigator.of(context).pop();
-                  await _logout();
-                },
-              ),
-            ],
-          ),
-        ),
-      body: Column(
-      children: [
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-          decoration: const BoxDecoration(
-            color: workerThemeColor,
-            borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  _isLoading
-                      ? '스테이션 정보를 불러오는 중입니다.'
-                      : '재배치가 필요한 따릉이 위치를 확인하세요.',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-             
-            ],
-          ),
-        ),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(24),
-              child: Stack(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  FlutterMap(
-                    options: MapOptions(
-                      initialCenter: _mapCenter,
-                      initialZoom: 13.2,
-                    ),
+                  Row(
                     children: [
-                      TileLayer(
-                        urlTemplate:
-                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                        userAgentPackageName: 'com.example.beangle_app',
-                      ),
-                      MarkerLayer(
-                        markers: visibleStations.map((station) {
-                          final nowHour =
-                              DateTime(now.year, now.month, now.day, now.hour);
-                          final flowToNext = _cumulativeFlowBetween(
-                            station.id,
-                            nowHour,
-                            nextRelocationTime,
-                          );
-                          final flowNextToFollowing = _cumulativeFlowBetween(
-                            station.id,
-                            nextRelocationTime,
-                            followingRelocationTime,
-                          );
-                          return Marker(
-                            point: station.location,
-                            width: 200,
-                            height: 96,
-                            child: CycleStationMarker(
-                              station: station,
-                              isCompleted: _completedStationIds.contains(
-                                int.tryParse(station.id.replaceFirst('ST-', '')),
-                              ),
-                              onWorkSubmitted: _loadCompletedStations,
-                              currentTime: now,
-                              nextRelocationTime: nextRelocationTime,
-                              currentTimeLabel: _formatHourLabel(now),
-                              nextRelocationLabel: nextRelocationLabel,
-                              currentCount: station.parkingCount,
-                              cumulativeInflow: flowNextToFollowing?.inflow,
-                              cumulativeOutflow: flowNextToFollowing?.outflow,
-                              preInflow: flowToNext?.inflow,
-                              preOutflow: flowToNext?.outflow,
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ],
-                  ),
-                  Positioned(
-                    top: 16,
-                    right: 16,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.95),
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x22000000),
-                            blurRadius: 16,
-                            offset: Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 10,
+                      Container(
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.18),
+                          shape: BoxShape.circle,
                         ),
+                        child: const Icon(
+                          Icons.person,
+                          color: Colors.white,
+                          size: 28,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.schedule, size: 18),
-                                SizedBox(width: 8),
-                                Text(
-                                  '실시간 배치 현황',
-                                  style: TextStyle(fontWeight: FontWeight.w600),
-                                ),
-                              ],
-                            ),
-                            if (!_isLoading) ...[
-                              const SizedBox(height: 6),
-                              Text('조회 스테이션 ${visibleStations.length}곳'),
-                              const SizedBox(height: 4),
-                              Text('작업 완료 ${_completedStationIds.length}곳'),
-                              if (_predictionData.isNotEmpty) ...[
-                              const SizedBox(height: 4),
-                              Text(
-                                '재배치 누적: $nextRelocationLabel → $followingRelocationLabel',
+                            Text(
+                              '',
+                              // _userName.isEmpty ? '게스트 사용자' : _userName,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
                               ),
-                            ],
-                            ],
+                            ),
                           ],
                         ),
                       ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.brightness_4,
+                color: CommonColor.primaryTextColor(isDarkTheme),
+              ),
+              title: Text(
+                '다크테마',
+                style: TextStyle(
+                  color: CommonColor.primaryTextColor(isDarkTheme),
+                ),
+              ),
+              trailing: Switch(
+                value: isDarkTheme,
+                onChanged: (bool value) {
+                  setState(() {
+                    isDarkTheme = value;
+                  });
+                  _persistTheme();
+                },
+              ),
+            ),
+
+            ListTile(
+              leading: Icon(
+                Icons.chat_bubble_outline,
+                color: CommonColor.primaryTextColor(isDarkTheme),
+              ),
+              title: Text(
+                '채팅 리스트',
+                style: TextStyle(
+                  color: CommonColor.primaryTextColor(isDarkTheme),
+                ),
+              ),
+              onTap: () {
+                Navigator.of(context).pop();
+                Get.to(
+                  () => Scaffold(
+                    backgroundColor: CommonColor.backgroundColor(isDarkTheme),
+                    appBar: AppBar(
+                      backgroundColor: workerThemeColor,
+                      foregroundColor: Colors.white,
+                      title: const Text('채팅 리스트'),
+                    ),
+                    body: const SafeArea(child: WorkerChatListPage()),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.logout,
+                color: CommonColor.primaryTextColor(isDarkTheme),
+              ),
+              title: Text(
+                '로그아웃',
+                style: TextStyle(
+                  color: CommonColor.primaryTextColor(isDarkTheme),
+                ),
+              ),
+              onTap: () async {
+                Navigator.of(context).pop();
+                await _logout();
+              },
+            ),
+          ],
+        ),
+      ),
+      body: Column(
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+            decoration: const BoxDecoration(
+              color: workerThemeColor,
+              borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _isLoading
+                        ? '스테이션 정보를 불러오는 중입니다.'
+                        : '재배치가 필요한 따릉이 위치를 확인하세요.',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                  if (_isLoading) const Center(child: CircularProgressIndicator()),
-                  if (_errorMessage != null)
-                    Center(
-                      child: Container(
-                        margin: const EdgeInsets.all(24),
-                        padding: const EdgeInsets.all(20),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: Stack(
+                  children: [
+                    FlutterMap(
+                      options: MapOptions(
+                        initialCenter: _mapCenter,
+                        initialZoom: 13.2,
+                      ),
+                      children: [
+                        TileLayer(
+                          urlTemplate:
+                              'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          userAgentPackageName: 'com.example.beangle_app',
+                        ),
+                        MarkerLayer(
+                          markers: visibleStations.map((station) {
+                            final nowHour = DateTime(
+                              now.year,
+                              now.month,
+                              now.day,
+                              now.hour,
+                            );
+                            final flowToNext = _cumulativeFlowBetween(
+                              station.id,
+                              nowHour,
+                              nextRelocationTime,
+                            );
+                            final flowNextToFollowing = _cumulativeFlowBetween(
+                              station.id,
+                              nextRelocationTime,
+                              followingRelocationTime,
+                            );
+                            return Marker(
+                              point: station.location,
+                              width: 200,
+                              height: 96,
+                              child: CycleStationMarker(
+                                station: station,
+                                isCompleted: _completedStationIds.contains(
+                                  int.tryParse(
+                                    station.id.replaceFirst('ST-', ''),
+                                  ),
+                                ),
+                                onWorkSubmitted: _loadCompletedStations,
+                                currentTime: now,
+                                nextRelocationTime: nextRelocationTime,
+                                currentTimeLabel: _formatHourLabel(now),
+                                nextRelocationLabel: nextRelocationLabel,
+                                currentCount: station.parkingCount,
+                                cumulativeInflow: flowNextToFollowing?.inflow,
+                                cumulativeOutflow: flowNextToFollowing?.outflow,
+                                preInflow: flowToNext?.inflow,
+                                preOutflow: flowToNext?.outflow,
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                    ),
+                    Positioned(
+                      top: 16,
+                      right: 16,
+                      child: DecoratedBox(
                         decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(20),
+                          color: Colors.white.withValues(alpha: 0.95),
+                          borderRadius: BorderRadius.circular(16),
                           boxShadow: const [
                             BoxShadow(
                               color: Color(0x22000000),
-                              blurRadius: 18,
+                              blurRadius: 16,
                               offset: Offset(0, 8),
                             ),
                           ],
                         ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.error_outline,
-                              color: Colors.redAccent,
-                              size: 40,
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              _errorMessage!,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 10,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.schedule, size: 18),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    '실시간 배치 현황',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ),
-                            const SizedBox(height: 12),
-                            FilledButton(
-                              onPressed: _loadStations,
-                              child: const Text('다시 시도'),
-                            ),
-                          ],
+                              if (!_isLoading) ...[
+                                const SizedBox(height: 6),
+                                Text('조회 스테이션 ${visibleStations.length}곳'),
+                                const SizedBox(height: 4),
+                                Text('작업 완료 ${_completedStationIds.length}곳'),
+                                if (_predictionData.isNotEmpty) ...[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '재배치 누적: $nextRelocationLabel → $followingRelocationLabel',
+                                  ),
+                                ],
+                              ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                ],
+                    if (_isLoading)
+                      const Center(child: CircularProgressIndicator()),
+                    if (_errorMessage != null)
+                      Center(
+                        child: Container(
+                          margin: const EdgeInsets.all(24),
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x22000000),
+                                blurRadius: 18,
+                                offset: Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.error_outline,
+                                color: Colors.redAccent,
+                                size: 40,
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                _errorMessage!,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              FilledButton(
+                                onPressed: _loadStations,
+                                child: const Text('다시 시도'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
-        ),
-      ],
-    )
+        ],
+      ),
     );
   } // build
 
-  // === Functions === 
+  // === Functions ===
 
   Future<void> _loadCompletedStations() async {
     try {
@@ -378,7 +429,7 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
       final List<WorkRecord> works = await _workApi.fetchWorks();
       final Set<int> completedIds =
           works
-              .where((WorkRecord item) => _isSameSlot(item.worktime, slotTime))
+              .where((WorkRecord item) => _isSameSlot(item.time, slotTime))
               .map((WorkRecord item) => item.stationId)
               .toSet();
 
@@ -471,10 +522,12 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
 
     final inflow = hourData['inflow'];
     final outflow = hourData['outflow'];
-    final inflowValue =
-        inflow is num ? inflow.toDouble() : double.tryParse(inflow?.toString() ?? '');
-    final outflowValue =
-        outflow is num ? outflow.toDouble() : double.tryParse(outflow?.toString() ?? '');
+    final inflowValue = inflow is num
+        ? inflow.toDouble()
+        : double.tryParse(inflow?.toString() ?? '');
+    final outflowValue = outflow is num
+        ? outflow.toDouble()
+        : double.tryParse(outflow?.toString() ?? '');
     if (inflowValue == null && outflowValue == null) {
       return null;
     }
@@ -489,9 +542,11 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
     double inflowSum = 0;
     double outflowSum = 0;
     var found = false;
-    for (var cursor = start;
-        cursor.isBefore(end);
-        cursor = cursor.add(const Duration(hours: 1))) {
+    for (
+      var cursor = start;
+      cursor.isBefore(end);
+      cursor = cursor.add(const Duration(hours: 1))
+    ) {
       final flow = _lookupFlowSummary(stationId, cursor);
       if (flow != null) {
         inflowSum += flow.inflow;
@@ -529,6 +584,7 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
       });
     }
   }
+
   Future<void> _loadStations() async {
     setState(() {
       _isLoading = true;
@@ -577,8 +633,9 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
 
     final row = rows.first as Map<String, dynamic>;
     final latitude = double.tryParse(row['stationLatitude']?.toString() ?? '');
-    final longitude =
-        double.tryParse(row['stationLongitude']?.toString() ?? '');
+    final longitude = double.tryParse(
+      row['stationLongitude']?.toString() ?? '',
+    );
 
     if (latitude == null || longitude == null) {
       throw Exception('Invalid coordinates: $stationId');
@@ -586,24 +643,23 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
     return CycleStation(
       id: stationId,
       name: row['stationName']?.toString() ?? stationId,
-      parkingCount: int.tryParse(row['parkingBikeTotCnt']?.toString() ?? '') ?? 0,
+      parkingCount:
+          int.tryParse(row['parkingBikeTotCnt']?.toString() ?? '') ?? 0,
       rackCount: int.tryParse(row['rackTotCnt']?.toString() ?? '') ?? 0,
       location: LatLng(latitude, longitude),
     );
   }
+
   void _persistTheme() {
     _storage.write(_themeStorageKey, isDarkTheme);
   }
+
   Future<void> _logout() async {
     // 로그인 사용자 식별값을 지우고 로그인 화면으로 복귀한다.
     await _storage.remove(_workerIdStorageKey);
     if (!mounted) {
       return;
     }
-
-    setState(() {
-      _workerId = null;
-    });
 
     Get.offAll(() => const AuthPage());
   }
