@@ -1,4 +1,6 @@
 import 'package:beangle_app/view/auth/custom_textfield.dart';
+import 'package:beangle_app/view/auth/worker_auth_sign_page.dart';
+import 'package:beangle_app/view/worker/worker_find_password.dart';
 import 'package:beangle_app/widgets/primaryButton.dart';
 import 'package:beangle_app/view/worker/dashboard.dart';
 import 'package:beangle_app/view/worker/map_for_worker.dart';
@@ -216,6 +218,26 @@ class _WorkerLoginState extends State<WorkerLogin> {
                 text: "로그인",
                 onPressed: _onLoginPressed,
               ),
+              SizedBox(height: sectionGap),
+
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+              TextButton(
+                onPressed: () {
+                  Get.to(() => const WorkerAuthSignPage());
+                },
+                child: Text("회원가입"),
+              ),
+              SizedBox(height: sectionGap),
+              TextButton(
+                onPressed: () {
+                  Get.to(() => const WorkerFindPassword());
+                },
+                child: Text("비밀번호 찾기"),
+              ),
+
+              ],)
 
             ],
           ),

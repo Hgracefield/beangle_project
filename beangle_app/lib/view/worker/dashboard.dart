@@ -523,7 +523,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
                 final _WorkerDirectoryItem? worker =
                     workerDirectory[item.workerId];
                 return _RefillLogItem(
-                  refillTime: item.time,
+                  refillTime: item.worktime,
                   refillCount: item.count,
                   workerId: item.workerId,
                   workerName: worker?.name,

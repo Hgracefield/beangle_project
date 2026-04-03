@@ -4,14 +4,14 @@ class WorkRecord {
     required this.workerId,
     required this.stationId,
     required this.count,
-    required this.time,
+    required this.worktime
   });
 
   final int? workId;
   final int workerId;
   final int stationId;
   final int count;
-  final DateTime time;
+  final DateTime worktime;
 
   factory WorkRecord.fromJson(Map<String, dynamic> json) {
     final String rawTime = json['time']?.toString() ?? '';
@@ -20,7 +20,7 @@ class WorkRecord {
       workerId: int.tryParse(json['worker_id']?.toString() ?? '') ?? 0,
       stationId: int.tryParse(json['station_id']?.toString() ?? '') ?? 0,
       count: int.tryParse(json['count']?.toString() ?? '') ?? 0,
-      time: DateTime.tryParse(rawTime) ?? DateTime.now(),
+      worktime: DateTime.tryParse(rawTime) ?? DateTime.now(),
     );
   }
 
@@ -30,7 +30,7 @@ class WorkRecord {
       'worker_id': workerId,
       'station_id': stationId,
       'count': count,
-      'time': time.toIso8601String(),
+      'worktime': worktime.toString(),
     };
   }
 }
