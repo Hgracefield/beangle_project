@@ -128,6 +128,51 @@ class CycleStationMarker extends StatelessWidget {
     }
   }
 
+  Future<void> _handleRequestWork({
+    required BuildContext context,
+    required DateTime targetTime,
+  }) async {
+    final int? workerId =
+        int.tryParse(_storage.read('worker_id')?.toString() ?? '');
+    if (workerId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('작업자 로그인 정보가 없습니다')),
+      );
+      return;
+    }
+
+    final int? stationId =
+        int.tryParse(station.id.replaceFirst('ST-', ''));
+    if (stationId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('스테이션 번호를 확인할 수 없습니다')),
+      );
+      return;
+    }
+
+    try {
+      final bool ok = await _workApi.createWorkRequest(
+        workerId: workerId,
+        stationId: stationId,
+        worktime: targetTime,
+        requestMessage: '작업 요청',
+      );
+      if (ok) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('관리자에게 작업 요청을 보냈어요')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('작업 요청에 실패했어요')),
+        );
+      }
+    } catch (error) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('작업 요청에 실패했습니다: $error')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final Color markerBorderColor =
@@ -185,10 +230,10 @@ class CycleStationMarker extends StatelessWidget {
                     ? actionDelta
                     : limitedRecoveryCount ?? actionDelta.abs();
         final DateTime activationStart = nextRelocationTime.subtract(
-          const Duration(hours: 1),
+          const Duration(minutes: 30),
         );
         final DateTime activationEnd = nextRelocationTime.add(
-          const Duration(hours: 1),
+          const Duration(minutes: 30),
         );
         final bool isActionWindowActive =
             !currentTime.isBefore(activationStart) &&
@@ -308,34 +353,41 @@ class CycleStationMarker extends StatelessWidget {
                       width: double.infinity,
                       child: FilledButton.icon(
                         onPressed: () async {
-                          await _handleSubmitWork(
-                            context: context,
-                            isActionWindowActive:  isActionWindowActive,
-                            targetTime: nextRelocationTime,
-                            workCount: submissionCount,
-                          );
+                          if (isActionWindowActive) {
+                            await _handleSubmitWork(
+                              context: context,
+                              isActionWindowActive: isActionWindowActive,
+                              targetTime: nextRelocationTime,
+                              workCount: submissionCount,
+                            );
+                          } else {
+                            await _handleRequestWork(
+                              context: context,
+                              targetTime: nextRelocationTime,
+                            );
+                          }
                         },
                         style: FilledButton.styleFrom(
                           backgroundColor:
-                              isActionWindowActive
-                                  ? accentColor
-                                  : Colors.grey.shade400,
+                              isActionWindowActive ? accentColor : workerThemeColor,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                         ),
                         icon: Icon(
                           isActionWindowActive
                               ? Icons.assignment_turned_in
-                              : Icons.lock_clock,
+                              : Icons.mark_email_unread,
                         ),
                         label: Text(
-                          isActionWindowActive ? '작업 내역 전송' : '작업 내역 전송',
+                          isActionWindowActive ? '작업 내역 전송' : '승인 요청',
                         ),
                       ),
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      '재배치 시간 기준 1시간 전부터 1시간 후까지만 활성화됩니다.',
+                      isActionWindowActive
+                          ? '재배치 시간 기준 30분 전부터 30분 후까지만 활성화됩니다.'
+                          : '현재 시간은 작업 시간대가 아니에요. 승인 요청을 보낼 수 있습니다.',
                       style: TextStyle(
                         fontSize: 12,
                         color: labelTextColor,
