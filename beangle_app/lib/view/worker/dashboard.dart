@@ -26,6 +26,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 
 class StationExcelPage extends StatefulWidget {
@@ -64,30 +65,50 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
     _StationSeed(
       stationCode: 'ST-481',
       stationNumber: 933,
+      fallbackName: '상현',
+      latitude: 37.612484,
+      longitude: 126.914879,
+      markerHue: BitmapDescriptor.hueGreen,
       fallbackAvailable: 9,
       fallbackParking: 6,
     ),
     _StationSeed(
       stationCode: 'ST-2425',
       stationNumber: 4652,
+      fallbackName: '다원',
+      latitude: 37.600000,
+      longitude: 126.920000,
+      markerHue: BitmapDescriptor.hueAzure,
       fallbackAvailable: 0,
       fallbackParking: 0,
     ),
     _StationSeed(
       stationCode: 'ST-1331',
       stationNumber: 956,
+      fallbackName: '찬솔',
+      latitude: 37.594414,
+      longitude: 126.918015,
+      markerHue: BitmapDescriptor.hueBlue,
       fallbackAvailable: 10,
       fallbackParking: 8,
     ),
     _StationSeed(
       stationCode: 'ST-454',
       stationNumber: 906,
+      fallbackName: '신영',
+      latitude: 37.61721,
+      longitude: 126.919579,
+      markerHue: BitmapDescriptor.hueViolet,
       fallbackAvailable: 5,
       fallbackParking: 4,
     ),
     _StationSeed(
       stationCode: 'ST-453',
       stationNumber: 905,
+      fallbackName: '혜전',
+      latitude: 37.636234,
+      longitude: 126.918999,
+      markerHue: BitmapDescriptor.hueRose,
       fallbackAvailable: 11,
       fallbackParking: 9,
     ),
@@ -247,21 +268,6 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
     }
 
     return rows.first.stationCode;
-  }
-
-  _ReservationCycleRow? get _selectedReservationCycleRow {
-    final String? selectedStationCode = _selectedStationCode;
-    if (selectedStationCode == null) {
-      return _reservationCycleRows.isEmpty ? null : _reservationCycleRows.first;
-    }
-
-    for (final _ReservationCycleRow row in _reservationCycleRows) {
-      if (row.stationCode == selectedStationCode) {
-        return row;
-      }
-    }
-
-    return _reservationCycleRows.isEmpty ? null : _reservationCycleRows.first;
   }
 
   _StationSeed? get _selectedStationSeed {
@@ -572,10 +578,20 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
       final int rackCount =
           int.tryParse(row['rackTotCnt']?.toString() ?? '') ??
           (seed.fallbackAvailable + seed.fallbackParking);
+      final double latitude =
+          double.tryParse(row['stationLatitude']?.toString() ?? '') ??
+          seed.latitude;
+      final double longitude =
+          double.tryParse(row['stationLongitude']?.toString() ?? '') ??
+          seed.longitude;
+      final String stationName = row['stationName']?.toString() ?? '';
 
       return _StationAvailabilitySnapshot(
+        name: stationName.trim().isEmpty ? seed.fallbackName : stationName,
         available: available,
         parking: (rackCount - available).clamp(0, rackCount),
+        latitude: latitude,
+        longitude: longitude,
       );
     } catch (_) {
       return seed.toSnapshot();
@@ -739,56 +755,223 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
     );
   }
 
-  Widget _buildStationDropdown() {
-    return SizedBox(
-      width: 240,
-      child: DropdownButtonFormField<String>(
-        key: ValueKey<String?>(_selectedStationCode),
-        initialValue: _selectedStationCode,
-        decoration: InputDecoration(
-          labelText: 'Station',
-          labelStyle: const TextStyle(
-            color: Color(0xFF355F25),
-            fontWeight: FontWeight.w600,
+  _ReservationCycleRow? _reservationCycleRowForCode(String stationCode) {
+    for (final _ReservationCycleRow row in _reservationCycleRows) {
+      if (row.stationCode == stationCode) {
+        return row;
+      }
+    }
+    return null;
+  }
+
+  _StationSeed? _stationSeedForCode(String stationCode) {
+    for (final _StationSeed seed in _stationSeeds) {
+      if (seed.stationCode == stationCode) {
+        return seed;
+      }
+    }
+    return null;
+  }
+
+  LatLng get _initialMapTarget {
+    double latitudeSum = 0;
+    double longitudeSum = 0;
+
+    for (final _StationSeed seed in _stationSeeds) {
+      final _StationAvailabilitySnapshot snapshot =
+          _stationAvailabilityByCode[seed.stationCode] ?? seed.toSnapshot();
+      latitudeSum += snapshot.latitude;
+      longitudeSum += snapshot.longitude;
+    }
+
+    return LatLng(
+      latitudeSum / _stationSeeds.length,
+      longitudeSum / _stationSeeds.length,
+    );
+  }
+
+  String _stationName(_StationSeed seed) {
+    return (_stationAvailabilityByCode[seed.stationCode] ?? seed.toSnapshot())
+        .name;
+  }
+
+  double _stationMarkerHue(_StationSeed seed) {
+    return seed.markerHue;
+  }
+
+  Set<Marker> _buildStationMarkers() {
+    return _stationSeeds.map((_StationSeed seed) {
+      final _StationAvailabilitySnapshot snapshot =
+          _stationAvailabilityByCode[seed.stationCode] ?? seed.toSnapshot();
+
+      return Marker(
+        markerId: MarkerId(seed.stationCode),
+        position: snapshot.position,
+        infoWindow: InfoWindow.noText,
+        icon: BitmapDescriptor.defaultMarkerWithHue(_stationMarkerHue(seed)),
+        onTap: () => _openStationDetailsSheet(seed.stationCode),
+      );
+    }).toSet();
+  }
+
+  Future<void> _openStationDetailsSheet(String stationCode) async {
+    if (_selectedStationCode != stationCode) {
+      setState(() {
+        _selectedStationCode = stationCode;
+      });
+    }
+
+    await _loadRefillLogsForSelectedStation();
+    if (!mounted) {
+      return;
+    }
+
+    final _ReservationCycleRow? row = _reservationCycleRowForCode(stationCode);
+    final _StationSeed? seed = _stationSeedForCode(stationCode);
+    if (row == null || seed == null) {
+      return;
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (BuildContext context) {
+        return FractionallySizedBox(
+          heightFactor: 0.88,
+          child: DecoratedBox(
+            decoration: const BoxDecoration(
+              color: _pageBackgroundColor,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+            ),
+            child: Column(
+              children: <Widget>[
+                const SizedBox(height: 12),
+                Container(
+                  width: 52,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFD1D5DB),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 900),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: <Widget>[
+                            Card(
+                              margin: EdgeInsets.zero,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(24),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.all(20),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: <Widget>[
+                                    Text(
+                                      seed.displayId,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.w800,
+                                        color: Color(0xFF1F3516),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Text(
+                                      _stationName(seed),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        height: 1.4,
+                                        color: Color(0xFF475569),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Wrap(
+                                      spacing: 10,
+                                      runSpacing: 10,
+                                      children: <Widget>[
+                                        _buildSummaryChip(
+                                          color: const Color(0xFFF1F5F9),
+                                          textColor: const Color(0xFF334155),
+                                          text: row.stationCode,
+                                        ),
+                                        _buildSummaryChip(
+                                          color: const Color(0xFFE8F2E1),
+                                          textColor: _primaryColor,
+                                          text:
+                                              'Current ${row.currentAvailableCycleCount}',
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            _buildSectionTitle('Cycle Table'),
+                            const SizedBox(height: 10),
+                            SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: _buildSectionFrame(
+                                child: _buildReservationCycleTable(
+                                  <_ReservationCycleRow>[row],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            _buildSectionTitle('Availability Trend'),
+                            const SizedBox(height: 10),
+                            _buildSectionFrame(
+                              child: _buildStationTrendChart(row),
+                            ),
+                            const SizedBox(height: 24),
+                            _buildSectionTitle('Refill Logs'),
+                            const SizedBox(height: 10),
+                            _buildSectionFrame(child: _buildRefillLogSection()),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-          filled: true,
-          fillColor: Colors.white,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 14,
-            vertical: 14,
-          ),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: _tableBorderColor),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: _tableBorderColor),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: _primaryColor, width: 1.6),
-          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSummaryChip({
+    required Color color,
+    required Color textColor,
+    required String text,
+  }) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: textColor, fontWeight: FontWeight.w700),
         ),
-        items: _reservationCycleRows
-            .map(
-              (_ReservationCycleRow row) => DropdownMenuItem<String>(
-                value: row.stationCode,
-                child: Text(row.stationCode),
-              ),
-            )
-            .toList(growable: false),
-        onChanged: (String? stationCode) {
-          if (stationCode == null) {
-            return;
-          }
-
-          setState(() {
-            _selectedStationCode = stationCode;
-          });
-
-          _loadRefillLogsForSelectedStation();
-        },
       ),
     );
   }
@@ -1073,9 +1256,6 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
 
   @override
   Widget build(BuildContext context) {
-    final _ReservationCycleRow? selectedReservationCycleRow =
-        _selectedReservationCycleRow;
-
     return Scaffold(
       appBar: AppBar(
         backgroundColor: const Color(0xFFF7FBF4),
@@ -1096,50 +1276,32 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
       ),
       body: ColoredBox(
         color: _pageBackgroundColor,
-        child: Center(
-          child: _isLoading
-              ? const CircularProgressIndicator(color: _primaryColor)
-              : selectedReservationCycleRow == null
-              ? const Text('No station data available.')
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(24),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 1120),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: <Widget>[
-                          _buildStationDropdown(),
-                          const SizedBox(height: 20),
-                          _buildSectionTitle('Cycle Table'),
-                          const SizedBox(height: 10),
-                          SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: _buildSectionFrame(
-                              child: _buildReservationCycleTable(
-                                <_ReservationCycleRow>[
-                                  selectedReservationCycleRow,
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          _buildSectionTitle('Availability Trend'),
-                          const SizedBox(height: 10),
-                          _buildSectionFrame(
-                            child: _buildStationTrendChart(
-                              selectedReservationCycleRow,
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          _buildSectionTitle('Refill Logs'),
-                          const SizedBox(height: 10),
-                          _buildSectionFrame(child: _buildRefillLogSection()),
-                        ],
-                      ),
-                    ),
+        child: Stack(
+          children: <Widget>[
+            GoogleMap(
+              initialCameraPosition: CameraPosition(
+                target: _initialMapTarget,
+                zoom: 13.2,
+              ),
+              myLocationButtonEnabled: false,
+              zoomControlsEnabled: false,
+              mapToolbarEnabled: false,
+              markers: _buildStationMarkers(),
+            ),
+            if (_isLoading)
+              const Center(
+                child: CircularProgressIndicator(color: _primaryColor),
+              ),
+            if (!_isLoading && _reservationCycleRows.isEmpty)
+              const Center(
+                child: Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(20),
+                    child: Text('No station data available.'),
                   ),
                 ),
+              ),
+          ],
         ),
       ),
     );
@@ -1155,31 +1317,52 @@ class _StationSeed {
   const _StationSeed({
     required this.stationCode,
     required this.stationNumber,
+    required this.fallbackName,
+    required this.latitude,
+    required this.longitude,
+    required this.markerHue,
     required this.fallbackAvailable,
     required this.fallbackParking,
   });
 
   final String stationCode;
   final int stationNumber;
+  final String fallbackName;
+  final double latitude;
+  final double longitude;
+  final double markerHue;
   final int fallbackAvailable;
   final int fallbackParking;
 
+  String get displayId => 'station-$stationNumber';
+
   _StationAvailabilitySnapshot toSnapshot() {
     return _StationAvailabilitySnapshot(
+      name: fallbackName,
       available: fallbackAvailable,
       parking: fallbackParking,
+      latitude: latitude,
+      longitude: longitude,
     );
   }
 }
 
 class _StationAvailabilitySnapshot {
   const _StationAvailabilitySnapshot({
+    required this.name,
     required this.available,
     required this.parking,
+    required this.latitude,
+    required this.longitude,
   });
 
+  final String name;
   final int available;
   final int parking;
+  final double latitude;
+  final double longitude;
+
+  LatLng get position => LatLng(latitude, longitude);
 }
 
 // These Excel headers now map directly to the reservation cycle fields used
