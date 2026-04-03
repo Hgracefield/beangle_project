@@ -19,6 +19,8 @@
 // ===============================================
 import 'dart:convert';
 
+import 'package:beangle_app/model/work_api.dart';
+import 'package:beangle_app/model/work_record.dart';
 import 'package:beangle_app/view/auth/auth_page.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/foundation.dart';
@@ -115,6 +117,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
   ];
 
   final GetStorage _storage = GetStorage();
+  final WorkApi _workApi = WorkApi();
 
   VoidCallback? _cancelReservationStorageListener;
   Map<String, dynamic> _predictionData = const <String, dynamic>{};
@@ -493,38 +496,42 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
       });
     }
 
-    final Uri uri = Uri.parse('$_pythonApiBaseUrl/refill-logs').replace(
-      queryParameters: <String, String>{
-        'station_code': selectedStationSeed.stationCode,
-        'station_number': selectedStationSeed.stationNumber.toString(),
-      },
-    );
-
     try {
-      final http.Response response = await http.get(uri);
+      final List<WorkRecord> works = await _workApi.fetchWorks();
       if (requestToken != _refillLogRequestToken || !mounted) {
         return;
       }
 
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        setState(() {
-          _isRefillLogLoading = false;
-          _refillLogErrorText = response.statusCode == 404
-              ? 'Refill logs are not exposed by the current Python API.'
-              : 'Refill logs could not be loaded.';
-        });
+      final Map<int, _WorkerDirectoryItem> workerDirectory =
+          await _loadWorkerDirectory();
+      if (requestToken != _refillLogRequestToken || !mounted) {
         return;
       }
 
-      final Map<String, dynamic> json =
-          jsonDecode(response.body) as Map<String, dynamic>;
-      final List<dynamic> rawLogs =
-          json['logs'] as List<dynamic>? ?? <dynamic>[];
+      final int? stationCodeId = selectedStationSeed.codeId;
+      final Set<int> stationIds = <int>{
+        ?stationCodeId,
+        selectedStationSeed.stationNumber,
+      };
       final List<_RefillLogItem> refillLogs =
-          rawLogs
-              .map(
-                (dynamic item) =>
-                    _RefillLogItem.fromJson(item as Map<String, dynamic>),
+          works
+              .where(
+                (WorkRecord item) =>
+                    stationIds.contains(item.stationId) && item.count > 0,
+              )
+              .map((WorkRecord item) {
+                final _WorkerDirectoryItem? worker =
+                    workerDirectory[item.workerId];
+                return _RefillLogItem(
+                  refillTime: item.time,
+                  refillCount: item.count,
+                  workerId: item.workerId,
+                  workerName: worker?.name,
+                );
+              })
+              .where(
+                (_RefillLogItem item) =>
+                    item.refillTime != DateTime.fromMillisecondsSinceEpoch(0),
               )
               .toList(growable: false)
             ..sort(
@@ -543,9 +550,36 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
 
       setState(() {
         _isRefillLogLoading = false;
-        _refillLogErrorText =
-            'Refill logs could not be loaded from the current Python API.';
+        _refillLogErrorText = 'Refill logs could not be loaded.';
       });
+    }
+  }
+
+  Future<Map<int, _WorkerDirectoryItem>> _loadWorkerDirectory() async {
+    try {
+      final Uri workerUri = Uri.parse('$_pythonApiBaseUrl/worker/select');
+      final http.Response response = await http.get(workerUri);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return const <int, _WorkerDirectoryItem>{};
+      }
+
+      final Map<String, dynamic> json =
+          jsonDecode(response.body) as Map<String, dynamic>;
+      final List<dynamic> rawWorkers =
+          json['results'] as List<dynamic>? ?? <dynamic>[];
+      final Map<int, _WorkerDirectoryItem> workerDirectory =
+          <int, _WorkerDirectoryItem>{};
+
+      for (final dynamic item in rawWorkers) {
+        final _WorkerDirectoryItem worker = _WorkerDirectoryItem.fromJson(
+          item as Map<String, dynamic>,
+        );
+        workerDirectory[worker.workerId] = worker;
+      }
+
+      return workerDirectory;
+    } catch (_) {
+      return const <int, _WorkerDirectoryItem>{};
     }
   }
 
@@ -1179,10 +1213,6 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
               final String workerSummary = <String>[
                 if (log.workerName != null && log.workerName!.isNotEmpty)
                   log.workerName!,
-                if (log.workerPhone != null && log.workerPhone!.isNotEmpty)
-                  log.workerPhone!,
-                if (log.workerRole != null && log.workerRole!.isNotEmpty)
-                  log.workerRole!,
               ].join(' · ');
 
               return Column(
@@ -1207,6 +1237,8 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
                     ),
                     title: Text(
                       _formatRefillTime(log.refillTime),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: Color(0xFF111827),
                         fontWeight: FontWeight.w700,
@@ -1218,6 +1250,8 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
                         workerSummary.isEmpty
                             ? 'Worker information unavailable'
                             : workerSummary,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(color: Color(0xFF4B5563)),
                       ),
                     ),
@@ -1334,7 +1368,10 @@ class _StationSeed {
   final int fallbackAvailable;
   final int fallbackParking;
 
-  String get displayId => 'station-$stationNumber';
+  int? get codeId => int.tryParse(stationCode.replaceFirst('ST-', ''));
+
+  String get displayId =>
+      'station-${codeId?.toString() ?? stationCode.replaceFirst('ST-', '')}';
 
   _StationAvailabilitySnapshot toSnapshot() {
     return _StationAvailabilitySnapshot(
@@ -1432,35 +1469,32 @@ class _ChartPoint {
   final int value;
 }
 
+class _WorkerDirectoryItem {
+  const _WorkerDirectoryItem({required this.workerId, required this.name});
+
+  final int workerId;
+  final String? name;
+
+  factory _WorkerDirectoryItem.fromJson(Map<String, dynamic> json) {
+    return _WorkerDirectoryItem(
+      workerId: int.tryParse(json['worker_id']?.toString() ?? '') ?? 0,
+      name: json['worker_name']?.toString(),
+    );
+  }
+}
+
 class _RefillLogItem {
   const _RefillLogItem({
     required this.refillTime,
     this.refillCount,
     this.workerId,
     this.workerName,
-    this.workerPhone,
-    this.workerRole,
   });
 
   final DateTime refillTime;
   final int? refillCount;
   final int? workerId;
   final String? workerName;
-  final String? workerPhone;
-  final String? workerRole;
-
-  factory _RefillLogItem.fromJson(Map<String, dynamic> json) {
-    return _RefillLogItem(
-      refillTime:
-          DateTime.tryParse(json['refill_time']?.toString() ?? '') ??
-          DateTime.fromMillisecondsSinceEpoch(0),
-      refillCount: int.tryParse(json['refill_count']?.toString() ?? ''),
-      workerId: int.tryParse(json['worker_id']?.toString() ?? ''),
-      workerName: json['worker_name']?.toString(),
-      workerPhone: json['worker_phone']?.toString(),
-      workerRole: json['worker_role']?.toString(),
-    );
-  }
 }
 
 class _ReservationCycleRow {
