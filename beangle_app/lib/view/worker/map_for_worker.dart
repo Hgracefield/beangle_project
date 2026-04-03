@@ -427,11 +427,10 @@ class _MapForWorkerPageState extends State<MapForWorkerPage> {
     try {
       final DateTime slotTime = _nextRelocationTime(DateTime.now());
       final List<WorkRecord> works = await _workApi.fetchWorks();
-      final Set<int> completedIds =
-          works
-              .where((WorkRecord item) => _isSameSlot(item.time, slotTime))
-              .map((WorkRecord item) => item.stationId)
-              .toSet();
+      final Set<int> completedIds = works
+          .where((WorkRecord item) => _isSameSlot(item.worktime, slotTime))
+          .map((WorkRecord item) => item.stationId)
+          .toSet();
 
       if (!mounted) {
         return;
