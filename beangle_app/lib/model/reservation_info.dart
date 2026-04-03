@@ -39,12 +39,20 @@ class ReservationInfo {
   }
 
   Map<String, dynamic> toJson() {
+    final String formattedTime =
+        '${time.year.toString().padLeft(4, '0')}-'
+        '${time.month.toString().padLeft(2, '0')}-'
+        '${time.day.toString().padLeft(2, '0')} '
+        '${time.hour.toString().padLeft(2, '0')}:'
+        '${time.minute.toString().padLeft(2, '0')}:'
+        '${time.second.toString().padLeft(2, '0')}';
+
     return {
       //
       'reservation_id': reservation_id,
       'user_id': user_id,
       'station_id': station_id,
-      'time': time.toIso8601String(),
+      'time': formattedTime,
       'is_cancel': is_cancel,
       // 'notice': notice,
       //'imagePath': imagePath,
