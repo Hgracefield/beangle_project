@@ -16,6 +16,9 @@
 //   - Reworked the dashboard to adapt to the current reservation/backend files
 //     without changing other existing files.
 //   - Kept refill log loading as a dashboard-side best-effort integration.
+// - 04-Apr-2026, Codex
+//   - Moved station details into a left drawer-style panel.
+//   - Replaced fixed-width detail tables with responsive summary cards.
 // ===============================================
 import 'dart:convert';
 import 'dart:async';
@@ -27,7 +30,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:beangle_app/view/auth/auth_page.dart';
 import 'package:beangle_app/view/worker/worker_chat_list.dart';
 import 'package:beangle_app/settings/firebase_bootstrap.dart';
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -60,13 +62,8 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
 
   static const Color _primaryColor = Color(0xFF49992E);
   static const Color _pageBackgroundColor = Color(0xFFF5F8F1);
-  static const Color _headerTextColor = Colors.white;
   static const Color _tableBorderColor = Color(0xFF91B184);
   static const Color _stationColumnColor = Color(0xFFE8F2E1);
-  static const Color _valueCellColor = Colors.white;
-
-  static const double _stationColumnWidth = 132;
-  static const double _dataColumnWidth = 118;
 
   static const List<_StationSeed> _stationSeeds = <_StationSeed>[
     _StationSeed(
@@ -76,6 +73,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
       latitude: 37.612484,
       longitude: 126.914879,
       markerHue: BitmapDescriptor.hueGreen,
+      markerColor: Color(0xFF16A34A),
       fallbackAvailable: 9,
       fallbackParking: 6,
     ),
@@ -86,6 +84,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
       latitude: 37.600000,
       longitude: 126.920000,
       markerHue: BitmapDescriptor.hueAzure,
+      markerColor: Color(0xFF0284C7),
       fallbackAvailable: 0,
       fallbackParking: 0,
     ),
@@ -96,6 +95,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
       latitude: 37.594414,
       longitude: 126.918015,
       markerHue: BitmapDescriptor.hueBlue,
+      markerColor: Color(0xFF2563EB),
       fallbackAvailable: 10,
       fallbackParking: 8,
     ),
@@ -106,6 +106,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
       latitude: 37.61721,
       longitude: 126.919579,
       markerHue: BitmapDescriptor.hueViolet,
+      markerColor: Color(0xFF7C3AED),
       fallbackAvailable: 5,
       fallbackParking: 4,
     ),
@@ -116,6 +117,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
       latitude: 37.636234,
       longitude: 126.918999,
       markerHue: BitmapDescriptor.hueRose,
+      markerColor: Color(0xFFDB2777),
       fallbackAvailable: 11,
       fallbackParking: 9,
     ),
@@ -140,6 +142,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
   bool _hasSeenInitialAdminRoomSnapshot = false;
   int _lastAdminUnreadCount = 0;
   String? _lastAdminNotifiedMessage;
+  bool _isDetailsDrawerOpen = false;
 
   @override
   void initState() {
@@ -196,6 +199,22 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
     );
   }
 
+  int _unreadCountForRole(Map<String, dynamic>? data, String role) {
+    if (data == null) {
+      return 0;
+    }
+
+    final dynamic unreadCounts = data['unreadCounts'];
+    if (unreadCounts is Map) {
+      final dynamic roleCount = unreadCounts[role];
+      return int.tryParse(roleCount?.toString() ?? '') ?? 0;
+    }
+
+    final String legacyKey =
+        '${role[0].toUpperCase()}${role.substring(1)}UnreadCount';
+    return int.tryParse(data[legacyKey]?.toString() ?? '') ?? 0;
+  }
+
   void _startAdminChatNotifications() {
     if (!FirebaseBootstrap.isReady) {
       return;
@@ -207,7 +226,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
       final int unreadCount = docs.fold<int>(
         0,
         (int sum, QueryDocumentSnapshot<Map<String, dynamic>> doc) =>
-            sum + ChatService.unreadCountForRole(doc.data(), 'admin'),
+            sum + _unreadCountForRole(doc.data(), 'admin'),
       );
 
       if (_hasSeenInitialAdminRoomSnapshot &&
@@ -216,7 +235,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
         Map<String, dynamic>? incomingData;
         for (final QueryDocumentSnapshot<Map<String, dynamic>> doc in docs) {
           final Map<String, dynamic> data = doc.data();
-          if (ChatService.unreadCountForRole(data, 'admin') > 0 &&
+          if (_unreadCountForRole(data, 'admin') > 0 &&
               data['lastSenderRole']?.toString() == 'user') {
             incomingData = data;
             break;
@@ -258,10 +277,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Text(
-                title,
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
+              Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
               const SizedBox(height: 4),
               Text(message, maxLines: 2, overflow: TextOverflow.ellipsis),
             ],
@@ -307,7 +323,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
             ? snapshot.data!.docs.fold<int>(
                 0,
                 (int sum, QueryDocumentSnapshot<Map<String, dynamic>> doc) =>
-                    sum + ChatService.unreadCountForRole(doc.data(), 'admin'),
+                    sum + _unreadCountForRole(doc.data(), 'admin'),
               )
             : 0;
 
@@ -850,98 +866,6 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
     }).length;
   }
 
-  Table _buildReservationCycleTable(List<_ReservationCycleRow> rows) {
-    final Map<int, TableColumnWidth> columnWidths = <int, TableColumnWidth>{
-      0: const FixedColumnWidth(_stationColumnWidth),
-    };
-
-    for (
-      int index = 0;
-      index < _ReservationCycleColumn.values.length;
-      index++
-    ) {
-      columnWidths[index + 1] = const FixedColumnWidth(_dataColumnWidth);
-    }
-
-    return Table(
-      border: TableBorder.all(color: _tableBorderColor, width: 1.2),
-      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-      columnWidths: columnWidths,
-      children: <TableRow>[
-        TableRow(
-          children: <Widget>[
-            _buildHeaderCell('Station Code'),
-            ..._ReservationCycleColumn.values.map(
-              (_ReservationCycleColumn column) =>
-                  _buildHeaderCell(column.label),
-            ),
-          ],
-        ),
-        ...rows.map(
-          (_ReservationCycleRow row) => TableRow(
-            children: <Widget>[
-              _buildStationCell(row.stationCode),
-              ..._ReservationCycleColumn.values.map(
-                (_ReservationCycleColumn column) =>
-                    _buildValueCell(row.valueFor(column)),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildHeaderCell(String label) {
-    return Container(
-      height: 54,
-      alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      color: _primaryColor,
-      child: Text(
-        label,
-        textAlign: TextAlign.center,
-        style: const TextStyle(
-          fontWeight: FontWeight.w700,
-          color: _headerTextColor,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStationCell(String stationCode) {
-    return Container(
-      height: 50,
-      alignment: Alignment.centerLeft,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      color: _stationColumnColor,
-      child: Text(
-        stationCode,
-        style: const TextStyle(
-          fontWeight: FontWeight.w600,
-          color: Color(0xFF111827),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildValueCell(int value) {
-    return Container(
-      height: 50,
-      alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      color: _valueCellColor,
-      child: Text(
-        '$value',
-        textAlign: TextAlign.center,
-        style: const TextStyle(
-          color: Color(0xFF111827),
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-
   _ReservationCycleRow? _reservationCycleRowForCode(String stationCode) {
     for (final _ReservationCycleRow row in _reservationCycleRows) {
       if (row.stationCode == stationCode) {
@@ -986,6 +910,10 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
     return seed.markerHue;
   }
 
+  Color _stationMarkerColor(_StationSeed seed) {
+    return seed.markerColor;
+  }
+
   Set<Marker> _buildStationMarkers() {
     return _stationSeeds.map((_StationSeed seed) {
       final _StationAvailabilitySnapshot snapshot =
@@ -996,71 +924,147 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
         position: snapshot.position,
         infoWindow: InfoWindow.noText,
         icon: BitmapDescriptor.defaultMarkerWithHue(_stationMarkerHue(seed)),
-        onTap: () => _openStationDetailsSheet(seed.stationCode),
+        onTap: () => _openStationDetailsDrawer(seed.stationCode),
       );
     }).toSet();
   }
 
-  Future<void> _openStationDetailsSheet(String stationCode) async {
-    if (_selectedStationCode != stationCode) {
+  Future<void> _openStationDetailsDrawer(String stationCode) async {
+    if (_selectedStationCode != stationCode || !_isDetailsDrawerOpen) {
       setState(() {
         _selectedStationCode = stationCode;
+        _isDetailsDrawerOpen = true;
       });
     }
 
     await _loadRefillLogsForSelectedStation();
-    if (!mounted) {
+  }
+
+  void _closeStationDetailsDrawer() {
+    if (!_isDetailsDrawerOpen) {
       return;
     }
 
-    final _ReservationCycleRow? row = _reservationCycleRowForCode(stationCode);
-    final _StationSeed? seed = _stationSeedForCode(stationCode);
+    setState(() {
+      _isDetailsDrawerOpen = false;
+    });
+  }
+
+  bool _needsAttention(_ReservationCycleRow row) {
+    return row.currentAvailableCycleCount <= 3 ||
+        row.availableCycleCountAfter4Hours < row.currentAvailableCycleCount;
+  }
+
+  Widget _buildStationDetailsDrawer({required bool showCloseButton}) {
+    final String? stationCode =
+        _selectedStationCode ??
+        (_reservationCycleRows.isNotEmpty
+            ? _reservationCycleRows.first.stationCode
+            : null);
+    final _ReservationCycleRow? row = stationCode == null
+        ? null
+        : _reservationCycleRowForCode(stationCode);
+    final _StationSeed? seed = stationCode == null
+        ? null
+        : _stationSeedForCode(stationCode);
+
     if (row == null || seed == null) {
-      return;
-    }
-
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (BuildContext context) {
-        return FractionallySizedBox(
-          heightFactor: 0.88,
-          child: DecoratedBox(
-            decoration: const BoxDecoration(
-              color: _pageBackgroundColor,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      return Material(
+        color: _pageBackgroundColor,
+        elevation: showCloseButton ? 16 : 0,
+        borderRadius: showCloseButton
+            ? const BorderRadius.horizontal(right: Radius.circular(28))
+            : BorderRadius.zero,
+        clipBehavior: Clip.antiAlias,
+        child: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(
+              '마커를 선택하면 스테이션 상세 정보가 왼쪽 패널에 표시됩니다.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Color(0xFF4B5563),
+                fontWeight: FontWeight.w600,
+                height: 1.4,
+              ),
             ),
-            child: Column(
+          ),
+        ),
+      );
+    }
+    final _StationAvailabilitySnapshot snapshot =
+        _stationAvailabilityByCode[seed.stationCode] ?? seed.toSnapshot();
+    final int rackCount = snapshot.available + snapshot.parking;
+    final int forecastDelta =
+        row.availableCycleCountAfter8Hours - row.currentAvailableCycleCount;
+    final bool needsAttention = _needsAttention(row);
+
+    return Material(
+      color: _pageBackgroundColor,
+      elevation: showCloseButton ? 16 : 0,
+      borderRadius: showCloseButton
+          ? const BorderRadius.horizontal(right: Radius.circular(28))
+          : BorderRadius.zero,
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 10, 14),
+            child: Row(
               children: <Widget>[
-                const SizedBox(height: 12),
-                Container(
-                  width: 52,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFD1D5DB),
-                    borderRadius: BorderRadius.circular(999),
+                Expanded(
+                  child: Text(
+                    'Station Details',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF1F3516),
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
-                const SizedBox(height: 12),
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 900),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: <Widget>[
-                            Card(
-                              margin: EdgeInsets.zero,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(24),
+                if (showCloseButton)
+                  IconButton(
+                    onPressed: _closeStationDetailsDrawer,
+                    tooltip: '닫기',
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Card(
+                    margin: EdgeInsets.zero,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Container(
+                                width: 16,
+                                height: 16,
+                                margin: const EdgeInsets.only(top: 4),
+                                decoration: BoxDecoration(
+                                  color: _stationMarkerColor(seed),
+                                  shape: BoxShape.circle,
+                                ),
                               ),
-                              child: Padding(
-                                padding: const EdgeInsets.all(20),
+                              const SizedBox(width: 10),
+                              Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: <Widget>[
@@ -1074,7 +1078,7 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
                                         color: Color(0xFF1F3516),
                                       ),
                                     ),
-                                    const SizedBox(height: 10),
+                                    const SizedBox(height: 6),
                                     Text(
                                       _stationName(seed),
                                       maxLines: 2,
@@ -1084,60 +1088,69 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
                                         color: Color(0xFF475569),
                                       ),
                                     ),
-                                    const SizedBox(height: 16),
-                                    Wrap(
-                                      spacing: 10,
-                                      runSpacing: 10,
-                                      children: <Widget>[
-                                        _buildSummaryChip(
-                                          color: const Color(0xFFF1F5F9),
-                                          textColor: const Color(0xFF334155),
-                                          text: row.stationCode,
-                                        ),
-                                        _buildSummaryChip(
-                                          color: const Color(0xFFE8F2E1),
-                                          textColor: _primaryColor,
-                                          text:
-                                              'Current ${row.currentAvailableCycleCount}',
-                                        ),
-                                      ],
-                                    ),
                                   ],
                                 ),
                               ),
-                            ),
-                            const SizedBox(height: 20),
-                            _buildSectionTitle('Cycle Table'),
-                            const SizedBox(height: 10),
-                            SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: _buildSectionFrame(
-                                child: _buildReservationCycleTable(
-                                  <_ReservationCycleRow>[row],
-                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          Wrap(
+                            spacing: 10,
+                            runSpacing: 10,
+                            children: <Widget>[
+                              _buildSummaryChip(
+                                color: const Color(0xFFF1F5F9),
+                                textColor: const Color(0xFF334155),
+                                text: row.stationCode,
                               ),
-                            ),
-                            const SizedBox(height: 24),
-                            _buildSectionTitle('Availability Trend'),
-                            const SizedBox(height: 10),
-                            _buildSectionFrame(
-                              child: _buildStationTrendChart(row),
-                            ),
-                            const SizedBox(height: 24),
-                            _buildSectionTitle('Refill Logs'),
-                            const SizedBox(height: 10),
-                            _buildSectionFrame(child: _buildRefillLogSection()),
-                          ],
-                        ),
+                              _buildSummaryChip(
+                                color: _stationMarkerColor(
+                                  seed,
+                                ).withValues(alpha: 0.12),
+                                textColor: _stationMarkerColor(seed),
+                                text: '현재 ${row.currentAvailableCycleCount}대',
+                              ),
+                              _buildSummaryChip(
+                                color: needsAttention
+                                    ? const Color(0xFFFEF3C7)
+                                    : const Color(0xFFDCFCE7),
+                                textColor: needsAttention
+                                    ? const Color(0xFF92400E)
+                                    : const Color(0xFF166534),
+                                text: needsAttention ? '주의 필요' : '안정',
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 20),
+                  _buildSectionTitle('Quick Summary'),
+                  const SizedBox(height: 10),
+                  _buildSectionFrame(
+                    child: _buildStationSummaryGrid(
+                      row: row,
+                      seed: seed,
+                      rackCount: rackCount,
+                      forecastDelta: forecastDelta,
+                      needsAttention: needsAttention,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  _buildSectionTitle('Forecast Window'),
+                  const SizedBox(height: 10),
+                  _buildSectionFrame(child: _buildForecastCards(row)),
+                  const SizedBox(height: 24),
+                  _buildSectionTitle('Refill Logs'),
+                  const SizedBox(height: 10),
+                  _buildSectionFrame(child: _buildRefillLogSection()),
+                ],
+              ),
             ),
           ),
-        );
-      },
+        ],
+      ),
     );
   }
 
@@ -1185,134 +1198,211 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
     );
   }
 
-  Widget _buildStationTrendChart(_ReservationCycleRow row) {
-    // The chart uses the same ordered reservation cycle columns as the table so
-    // the selected station shows one consistent data story in both views.
-    final List<_ChartPoint> chartPoints = _ReservationCycleColumn.values
+  Widget _buildStationSummaryGrid({
+    required _ReservationCycleRow row,
+    required _StationSeed seed,
+    required int rackCount,
+    required int forecastDelta,
+    required bool needsAttention,
+  }) {
+    final List<_DashboardMetricCardData> cards = <_DashboardMetricCardData>[
+      _DashboardMetricCardData(
+        label: '현재 자전거',
+        value: '${row.currentAvailableCycleCount}대',
+        helper: '실시간 가용 수량',
+        accentColor: _stationMarkerColor(seed),
+      ),
+      _DashboardMetricCardData(
+        label: '빈 거치대',
+        value:
+            '${(rackCount - row.currentAvailableCycleCount).clamp(0, rackCount)}곳',
+        helper: '전체 거치대 $rackCount곳',
+        accentColor: const Color(0xFF2563EB),
+      ),
+      _DashboardMetricCardData(
+        label: '+4시간 예측',
+        value: '${row.availableCycleCountAfter4Hours}대',
+        helper: '중간 체크 시점',
+        accentColor: _primaryColor,
+      ),
+      _DashboardMetricCardData(
+        label: '+8시간 변화',
+        value: '${forecastDelta >= 0 ? '+' : ''}$forecastDelta대',
+        helper: '현재 대비 증감',
+        accentColor: forecastDelta >= 0
+            ? const Color(0xFF166534)
+            : const Color(0xFFB91C1C),
+      ),
+      _DashboardMetricCardData(
+        label: '상태',
+        value: needsAttention ? '주의 필요' : '안정',
+        helper: needsAttention ? '보충 우선 확인 권장' : '현재 흐름 안정적',
+        accentColor: needsAttention
+            ? const Color(0xFF92400E)
+            : const Color(0xFF166534),
+      ),
+      _DashboardMetricCardData(
+        label: '스테이션 번호',
+        value: '${seed.stationNumber}',
+        helper: '코드 ${seed.stationCode}',
+        accentColor: const Color(0xFF475569),
+      ),
+    ];
+
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double spacing = 12;
+        final double availableWidth = constraints.maxWidth - 24;
+        final bool singleColumn = availableWidth < 320;
+        final double tileWidth = singleColumn
+            ? availableWidth
+            : (availableWidth - spacing) / 2;
+
+        return Padding(
+          padding: const EdgeInsets.all(12),
+          child: Wrap(
+            spacing: spacing,
+            runSpacing: spacing,
+            children: cards
+                .map(
+                  (_DashboardMetricCardData card) => SizedBox(
+                    width: tileWidth,
+                    child: _DashboardMetricCard(card: card),
+                  ),
+                )
+                .toList(growable: false),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildForecastCards(_ReservationCycleRow row) {
+    final List<_ForecastSnapshot> forecasts = _ReservationCycleColumn.values
         .map(
-          (_ReservationCycleColumn column) => _ChartPoint(
+          (_ReservationCycleColumn column) => _ForecastSnapshot(
             label: column.chartLabel,
-            value: row.valueFor(column),
+            value: '${row.valueFor(column)}대',
           ),
         )
         .toList(growable: false);
-    final int maxValue = chartPoints.fold<int>(
-      0,
-      (int currentMax, _ChartPoint point) =>
-          point.value > currentMax ? point.value : currentMax,
-    );
-    final double maxY = (maxValue <= 0 ? 1 : maxValue + 2).toDouble();
-    final double interval = maxY <= 4 ? 1 : (maxY / 4).ceilToDouble();
 
-    return SizedBox(
-      height: 300,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 18, 18, 12),
-        child: LineChart(
-          LineChartData(
-            minX: 0,
-            maxX: (chartPoints.length - 1).toDouble(),
-            minY: 0,
-            maxY: maxY,
-            gridData: FlGridData(
-              show: true,
-              drawVerticalLine: false,
-              horizontalInterval: interval,
-              getDrawingHorizontalLine: (double value) {
-                return const FlLine(color: Color(0xFFE0E6DA), strokeWidth: 1);
-              },
-            ),
-            borderData: FlBorderData(
-              show: true,
-              border: Border.all(color: _tableBorderColor, width: 1),
-            ),
-            lineBarsData: <LineChartBarData>[
-              LineChartBarData(
-                isCurved: false,
-                color: _primaryColor,
-                barWidth: 3,
-                isStrokeCapRound: true,
-                dotData: FlDotData(
-                  show: true,
-                  getDotPainter:
-                      (
-                        FlSpot spot,
-                        double percent,
-                        LineChartBarData bar,
-                        int index,
-                      ) {
-                        return FlDotCirclePainter(
-                          radius: 4,
-                          color: _primaryColor,
-                          strokeWidth: 1.5,
-                          strokeColor: Colors.white,
-                        );
-                      },
-                ),
-                belowBarData: BarAreaData(show: false),
-                spots: List<FlSpot>.generate(
-                  chartPoints.length,
-                  (int index) => FlSpot(
-                    index.toDouble(),
-                    chartPoints[index].value.toDouble(),
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        const double spacing = 12;
+        final double availableWidth = constraints.maxWidth - 24;
+        final int columns = availableWidth >= 480
+            ? 3
+            : availableWidth >= 300
+            ? 2
+            : 1;
+        final double tileWidth =
+            (availableWidth - (spacing * (columns - 1))) / columns;
+
+        return Padding(
+          padding: const EdgeInsets.all(12),
+          child: Wrap(
+            spacing: spacing,
+            runSpacing: spacing,
+            children: forecasts
+                .map(
+                  (_ForecastSnapshot forecast) => SizedBox(
+                    width: tileWidth,
+                    child: _DashboardForecastCard(
+                      forecast: forecast,
+                      accentColor: _primaryColor,
+                    ),
                   ),
-                ),
-              ),
-            ],
-            titlesData: FlTitlesData(
-              topTitles: const AxisTitles(
-                sideTitles: SideTitles(showTitles: false),
-              ),
-              rightTitles: const AxisTitles(
-                sideTitles: SideTitles(showTitles: false),
-              ),
-              bottomTitles: AxisTitles(
-                sideTitles: SideTitles(
-                  showTitles: true,
-                  reservedSize: 36,
-                  interval: 1,
-                  getTitlesWidget: (double value, TitleMeta meta) {
-                    final int index = value.toInt();
-                    if (index < 0 || index >= chartPoints.length) {
-                      return const SizedBox.shrink();
-                    }
+                )
+                .toList(growable: false),
+          ),
+        );
+      },
+    );
+  }
 
-                    return SideTitleWidget(
-                      meta: meta,
-                      space: 10,
-                      child: Text(
-                        chartPoints[index].label,
-                        style: const TextStyle(
-                          color: Color(0xFF37522B),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              leftTitles: AxisTitles(
-                sideTitles: SideTitles(
-                  showTitles: true,
-                  reservedSize: 40,
-                  interval: interval,
-                  getTitlesWidget: (double value, TitleMeta meta) {
-                    return Text(
-                      value.toInt().toString(),
-                      style: const TextStyle(
-                        color: Color(0xFF37522B),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    );
-                  },
-                ),
+  Widget _buildMapSummaryCard() {
+    final String? selectedStationCode =
+        _selectedStationCode ??
+        (_reservationCycleRows.isNotEmpty
+            ? _reservationCycleRows.first.stationCode
+            : null);
+    final int attentionCount = _reservationCycleRows
+        .where(_needsAttention)
+        .length;
+    final _StationSeed? selectedSeed = selectedStationCode == null
+        ? null
+        : _stationSeedForCode(selectedStationCode);
+
+    return Card(
+      elevation: 4,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            const Text(
+              'Worker Dashboard',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF1F3516),
               ),
             ),
-          ),
+            const SizedBox(height: 8),
+            const Text(
+              '마커를 누르면 지도 위가 아니라 왼쪽 패널에서 상세 정보를 확인할 수 있습니다.',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: Color(0xFF4B5563)),
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: <Widget>[
+                _buildSummaryChip(
+                  color: const Color(0xFFE8F2E1),
+                  textColor: _primaryColor,
+                  text: '스테이션 ${_stationSeeds.length}곳',
+                ),
+                _buildSummaryChip(
+                  color: const Color(0xFFF1F5F9),
+                  textColor: const Color(0xFF334155),
+                  text: '주의 $attentionCount곳',
+                ),
+                if (selectedSeed != null)
+                  _buildSummaryChip(
+                    color: selectedSeed.markerColor.withValues(alpha: 0.14),
+                    textColor: selectedSeed.markerColor,
+                    text: '선택 ${selectedSeed.stationCode}',
+                  ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            _buildMarkerLegend(selectedStationCode),
+          ],
         ),
       ),
+    );
+  }
+
+  Widget _buildMarkerLegend(String? selectedStationCode) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: _stationSeeds
+          .map(
+            (_StationSeed seed) => _MarkerLegendChip(
+              label: seed.stationCode,
+              color: seed.markerColor,
+              isSelected: seed.stationCode == selectedStationCode,
+            ),
+          )
+          .toList(growable: false),
     );
   }
 
@@ -1464,32 +1554,114 @@ abstract class _ReservationCycleTableState<T extends StatefulWidget>
       ),
       body: ColoredBox(
         color: _pageBackgroundColor,
-        child: Stack(
-          children: <Widget>[
-            GoogleMap(
-              initialCameraPosition: CameraPosition(
-                target: _initialMapTarget,
-                zoom: 13.2,
-              ),
-              myLocationButtonEnabled: false,
-              zoomControlsEnabled: false,
-              mapToolbarEnabled: false,
-              markers: _buildStationMarkers(),
-            ),
-            if (_isLoading)
-              const Center(
-                child: CircularProgressIndicator(color: _primaryColor),
-              ),
-            if (!_isLoading && _reservationCycleRows.isEmpty)
-              const Center(
-                child: Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(20),
-                    child: Text('No station data available.'),
-                  ),
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final bool showPinnedPanel = constraints.maxWidth >= 1120;
+            final double rawPanelWidth = showPinnedPanel
+                ? 400
+                : constraints.maxWidth * 0.88;
+            final double panelWidth = rawPanelWidth
+                .clamp(300.0, 400.0)
+                .toDouble();
+            final bool showOverlayDrawer =
+                !showPinnedPanel && _isDetailsDrawerOpen;
+
+            return Stack(
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    if (showPinnedPanel)
+                      SizedBox(
+                        width: panelWidth,
+                        child: _buildStationDetailsDrawer(
+                          showCloseButton: false,
+                        ),
+                      ),
+                    Expanded(
+                      child: Stack(
+                        children: <Widget>[
+                          GoogleMap(
+                            initialCameraPosition: CameraPosition(
+                              target: _initialMapTarget,
+                              zoom: 13.2,
+                            ),
+                            myLocationButtonEnabled: false,
+                            zoomControlsEnabled: false,
+                            mapToolbarEnabled: false,
+                            markers: _buildStationMarkers(),
+                          ),
+                          SafeArea(
+                            child: Align(
+                              alignment: Alignment.topCenter,
+                              child: Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  16,
+                                  16,
+                                  0,
+                                ),
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 760,
+                                  ),
+                                  child: _buildMapSummaryCard(),
+                                ),
+                              ),
+                            ),
+                          ),
+                          if (_isLoading)
+                            const Center(
+                              child: CircularProgressIndicator(
+                                color: _primaryColor,
+                              ),
+                            ),
+                          if (!_isLoading && _reservationCycleRows.isEmpty)
+                            const Center(
+                              child: Card(
+                                child: Padding(
+                                  padding: EdgeInsets.all(20),
+                                  child: Text('No station data available.'),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-          ],
+                if (!showPinnedPanel)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      ignoring: !showOverlayDrawer,
+                      child: AnimatedOpacity(
+                        duration: const Duration(milliseconds: 220),
+                        opacity: showOverlayDrawer ? 1 : 0,
+                        child: GestureDetector(
+                          onTap: _closeStationDetailsDrawer,
+                          child: Container(color: const Color(0x66000000)),
+                        ),
+                      ),
+                    ),
+                  ),
+                if (!showPinnedPanel)
+                  SafeArea(
+                    child: AnimatedPositioned(
+                      duration: const Duration(milliseconds: 240),
+                      curve: Curves.easeOutCubic,
+                      top: 12,
+                      bottom: 12,
+                      left: showOverlayDrawer ? 0 : -(panelWidth + 24),
+                      child: SizedBox(
+                        width: panelWidth,
+                        child: _buildStationDetailsDrawer(
+                          showCloseButton: true,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -1509,6 +1681,7 @@ class _StationSeed {
     required this.latitude,
     required this.longitude,
     required this.markerHue,
+    required this.markerColor,
     required this.fallbackAvailable,
     required this.fallbackParking,
   });
@@ -1519,6 +1692,7 @@ class _StationSeed {
   final double latitude;
   final double longitude;
   final double markerHue;
+  final Color markerColor;
   final int fallbackAvailable;
   final int fallbackParking;
 
@@ -1616,11 +1790,189 @@ enum _ReservationCycleColumn {
   final String chartLabel;
 }
 
-class _ChartPoint {
-  const _ChartPoint({required this.label, required this.value});
+class _DashboardMetricCardData {
+  const _DashboardMetricCardData({
+    required this.label,
+    required this.value,
+    required this.helper,
+    required this.accentColor,
+  });
 
   final String label;
-  final int value;
+  final String value;
+  final String helper;
+  final Color accentColor;
+}
+
+class _DashboardMetricCard extends StatelessWidget {
+  const _DashboardMetricCard({required this.card});
+
+  final _DashboardMetricCardData card;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: card.accentColor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: card.accentColor.withValues(alpha: 0.16)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              card.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF4B5563),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              card.value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: card.accentColor,
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              card.helper,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Color(0xFF6B7280), height: 1.3),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ForecastSnapshot {
+  const _ForecastSnapshot({required this.label, required this.value});
+
+  final String label;
+  final String value;
+}
+
+class _DashboardForecastCard extends StatelessWidget {
+  const _DashboardForecastCard({
+    required this.forecast,
+    required this.accentColor,
+  });
+
+  final _ForecastSnapshot forecast;
+  final Color accentColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFDCE6D6)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: <Widget>[
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                color: accentColor,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    forecast.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF4B5563),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    forecast.value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF1F2937),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MarkerLegendChip extends StatelessWidget {
+  const _MarkerLegendChip({
+    required this.label,
+    required this.color,
+    required this.isSelected,
+  });
+
+  final String label;
+  final Color color;
+  final bool isSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: isSelected ? color.withValues(alpha: 0.16) : Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: isSelected ? color : const Color(0xFFD7DEE8),
+          width: isSelected ? 1.4 : 1,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF334155),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _WorkerDirectoryItem {

@@ -39,6 +39,8 @@ class GoogleMapsStationScreen extends StatefulWidget {
 
 class _GoogleMapsStationScreenState extends State<GoogleMapsStationScreen> {
   late final Future<List<StationMapStation>> _stationsFuture;
+  StationMapStation? _selectedStation;
+  bool _isDetailsDrawerOpen = false;
 
   @override
   void initState() {
@@ -80,36 +82,69 @@ class _GoogleMapsStationScreenState extends State<GoogleMapsStationScreen> {
                 );
               }
 
+              final StationMapStation selectedStation = _selectedStationFor(
+                stations,
+              );
+
               return _StationMapView(
                 stations: stations,
-                onStationSelected: _openStationSheet,
+                selectedStation: selectedStation,
+                isDetailsDrawerOpen: _isDetailsDrawerOpen,
+                onStationSelected: _showStationDetails,
+                onCloseDrawer: _closeDetailsDrawer,
               );
             },
       ),
     );
   }
 
-  Future<void> _openStationSheet(StationMapStation station) {
-    return showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (BuildContext context) {
-        return _StationDetailsBottomSheet(station: station);
-      },
-    );
+  StationMapStation _selectedStationFor(List<StationMapStation> stations) {
+    final StationMapStation? selectedStation = _selectedStation;
+    if (selectedStation == null) {
+      return stations.first;
+    }
+
+    for (final StationMapStation station in stations) {
+      if (station.id == selectedStation.id) {
+        return station;
+      }
+    }
+
+    return stations.first;
+  }
+
+  void _showStationDetails(StationMapStation station) {
+    setState(() {
+      _selectedStation = station;
+      _isDetailsDrawerOpen = true;
+    });
+  }
+
+  void _closeDetailsDrawer() {
+    if (!_isDetailsDrawerOpen) {
+      return;
+    }
+
+    setState(() {
+      _isDetailsDrawerOpen = false;
+    });
   }
 }
 
 class _StationMapView extends StatelessWidget {
   const _StationMapView({
     required this.stations,
+    required this.selectedStation,
+    required this.isDetailsDrawerOpen,
     required this.onStationSelected,
+    required this.onCloseDrawer,
   });
 
   final List<StationMapStation> stations;
+  final StationMapStation selectedStation;
+  final bool isDetailsDrawerOpen;
   final ValueChanged<StationMapStation> onStationSelected;
+  final VoidCallback onCloseDrawer;
 
   @override
   Widget build(BuildContext context) {
@@ -119,7 +154,7 @@ class _StationMapView extends StatelessWidget {
         markerId: MarkerId(station.id),
         position: station.position,
         infoWindow: InfoWindow.noText,
-        icon: BitmapDescriptor.defaultMarkerWithHue(station.status.markerHue),
+        icon: BitmapDescriptor.defaultMarkerWithHue(station.markerHue),
         onTap: () => onStationSelected(station),
       );
     }).toSet();
@@ -136,80 +171,157 @@ class _StationMapView extends StatelessWidget {
         )
         .length;
 
-    return Stack(
-      children: <Widget>[
-        GoogleMap(
-          initialCameraPosition: CameraPosition(
-            target: initialTarget,
-            zoom: 13.2,
-          ),
-          myLocationButtonEnabled: false,
-          zoomControlsEnabled: false,
-          mapToolbarEnabled: false,
-          markers: markers,
-        ),
-        SafeArea(
-          child: Align(
-            alignment: Alignment.topCenter,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 640),
-                child: Card(
-                  elevation: 4,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        const Text(
-                          'Station Map',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w700,
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool showPinnedPanel = constraints.maxWidth >= 1120;
+        final double rawPanelWidth = showPinnedPanel
+            ? 388
+            : constraints.maxWidth * 0.88;
+        final double panelWidth = rawPanelWidth.clamp(300.0, 388.0).toDouble();
+        final bool showOverlayDrawer = !showPinnedPanel && isDetailsDrawerOpen;
+
+        return Stack(
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                if (showPinnedPanel)
+                  SizedBox(
+                    width: panelWidth,
+                    child: _StationDetailsDrawerPanel(
+                      station: selectedStation,
+                      showCloseButton: false,
+                      onClose: onCloseDrawer,
+                    ),
+                  ),
+                Expanded(
+                  child: Stack(
+                    children: <Widget>[
+                      GoogleMap(
+                        initialCameraPosition: CameraPosition(
+                          target: initialTarget,
+                          zoom: 13.2,
+                        ),
+                        myLocationButtonEnabled: false,
+                        zoomControlsEnabled: false,
+                        mapToolbarEnabled: false,
+                        markers: markers,
+                      ),
+                      SafeArea(
+                        child: Align(
+                          alignment: Alignment.topCenter,
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 720),
+                              child: Card(
+                                elevation: 4,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: <Widget>[
+                                      const Text(
+                                        'Station Map',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        showPinnedPanel
+                                            ? 'Select a marker to refresh the left details panel.'
+                                            : 'Tap a marker to open the left drawer and review station details.',
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: Color(0xFF4B5563),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 14),
+                                      Wrap(
+                                        spacing: 10,
+                                        runSpacing: 10,
+                                        children: <Widget>[
+                                          _SummaryPill(
+                                            label: 'Stations',
+                                            value: '${stations.length}',
+                                            color: const Color(0xFF0E6B50),
+                                          ),
+                                          _SummaryPill(
+                                            label: 'Alert',
+                                            value: '$alertCount',
+                                            color: const Color(0xFFC62828),
+                                          ),
+                                          _SummaryPill(
+                                            label: 'Restocking',
+                                            value: '$restockingCount',
+                                            color: const Color(0xFFEF6C00),
+                                          ),
+                                          _SummaryPill(
+                                            label: 'Selected',
+                                            value: selectedStation.stationCode,
+                                            color: selectedStation.markerColor,
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 14),
+                                      _StationColorLegend(
+                                        stations: stations,
+                                        selectedStationId: selectedStation.id,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Tap any marker to open a scrollable station sheet.',
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: Color(0xFF4B5563)),
-                        ),
-                        const SizedBox(height: 14),
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-                          children: <Widget>[
-                            _SummaryPill(
-                              label: 'Stations',
-                              value: '${stations.length}',
-                              color: const Color(0xFF0E6B50),
-                            ),
-                            _SummaryPill(
-                              label: 'Alert',
-                              value: '$alertCount',
-                              color: const Color(0xFFC62828),
-                            ),
-                            _SummaryPill(
-                              label: 'Restocking',
-                              value: '$restockingCount',
-                              color: const Color(0xFFEF6C00),
-                            ),
-                          ],
-                        ),
-                      ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (!showPinnedPanel)
+              Positioned.fill(
+                child: IgnorePointer(
+                  ignoring: !showOverlayDrawer,
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 220),
+                    opacity: showOverlayDrawer ? 1 : 0,
+                    child: GestureDetector(
+                      onTap: onCloseDrawer,
+                      child: Container(color: const Color(0x66000000)),
                     ),
                   ),
                 ),
               ),
-            ),
-          ),
-        ),
-      ],
+            if (!showPinnedPanel)
+              SafeArea(
+                child: AnimatedPositioned(
+                  duration: const Duration(milliseconds: 240),
+                  curve: Curves.easeOutCubic,
+                  top: 12,
+                  bottom: 12,
+                  left: showOverlayDrawer ? 0 : -(panelWidth + 24),
+                  child: SizedBox(
+                    width: panelWidth,
+                    child: _StationDetailsDrawerPanel(
+                      station: selectedStation,
+                      showCloseButton: true,
+                      onClose: onCloseDrawer,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 
@@ -232,118 +344,168 @@ class _StationMapView extends StatelessWidget {
   }
 }
 
-class _StationDetailsBottomSheet extends StatelessWidget {
-  const _StationDetailsBottomSheet({required this.station});
+class _StationDetailsDrawerPanel extends StatelessWidget {
+  const _StationDetailsDrawerPanel({
+    required this.station,
+    required this.showCloseButton,
+    required this.onClose,
+  });
 
   final StationMapStation station;
+  final bool showCloseButton;
+  final VoidCallback onClose;
 
   @override
   Widget build(BuildContext context) {
-    return FractionallySizedBox(
-      heightFactor: 0.88,
-      child: DecoratedBox(
-        decoration: const BoxDecoration(
-          color: Color(0xFFF8FAFC),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        ),
-        child: Column(
-          children: <Widget>[
-            const SizedBox(height: 12),
-            Container(
-              width: 52,
-              height: 5,
-              decoration: BoxDecoration(
-                color: const Color(0xFFD1D5DB),
-                borderRadius: BorderRadius.circular(999),
-              ),
+    return Material(
+      color: const Color(0xFFF8FAFC),
+      elevation: showCloseButton ? 16 : 0,
+      borderRadius: showCloseButton
+          ? const BorderRadius.horizontal(right: Radius.circular(28))
+          : BorderRadius.zero,
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 10, 14),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    'Station Details',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
+                ),
+                if (showCloseButton)
+                  IconButton(
+                    onPressed: onClose,
+                    tooltip: 'Close details',
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+              ],
             ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 720),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  _SectionCard(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
-                        _SectionCard(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: <Widget>[
-                              Text(
-                                station.displayId,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.w800,
-                                ),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Container(
+                              width: 16,
+                              height: 16,
+                              margin: const EdgeInsets.only(top: 4),
+                              decoration: BoxDecoration(
+                                color: station.markerColor,
+                                shape: BoxShape.circle,
                               ),
-                              const SizedBox(height: 10),
-                              Text(
-                                station.address,
-                                maxLines: 3,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  height: 1.4,
-                                  color: Color(0xFF475569),
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              Wrap(
-                                spacing: 10,
-                                runSpacing: 10,
-                                crossAxisAlignment: WrapCrossAlignment.center,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: <Widget>[
-                                  _StatusBadge(status: station.status),
-                                  _InlineSummaryChip(
-                                    label: 'Station Code',
-                                    value: station.stationCode,
+                                  Text(
+                                    station.displayId,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.w800,
+                                    ),
                                   ),
-                                  _InlineSummaryChip(
-                                    label: 'Available',
-                                    value:
-                                        '${station.metrics.availableCycles}/${station.metrics.capacity}',
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    station.lastUpdatedLabel,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Color(0xFF64748B),
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 12),
-                              Text(
-                                station.statusSummary,
-                                maxLines: 3,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF111827),
-                                ),
-                              ),
-                            ],
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          station.address,
+                          maxLines: 4,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            height: 1.45,
+                            color: Color(0xFF475569),
                           ),
                         ),
                         const SizedBox(height: 16),
-                        _SectionCard(
-                          title: 'Table-like section',
-                          child: _StationMetricsTable(station: station),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: <Widget>[
+                            _StatusBadge(status: station.status),
+                            _InlineSummaryChip(
+                              label: 'Station Code',
+                              value: station.stationCode,
+                            ),
+                            _InlineSummaryChip(
+                              label: 'Available',
+                              value:
+                                  '${station.metrics.availableCycles}/${station.metrics.capacity}',
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 16),
-                        _SectionCard(
-                          title: 'Chart section',
-                          child: _StationChart(station: station),
-                        ),
-                        const SizedBox(height: 16),
-                        _SectionCard(
-                          title: 'Log / History list',
-                          child: _StationLogsList(logs: station.logs),
+                        const SizedBox(height: 12),
+                        Text(
+                          station.statusSummary,
+                          maxLines: 4,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF111827),
+                          ),
                         ),
                       ],
                     ),
                   ),
-                ),
+                  const SizedBox(height: 16),
+                  _SectionCard(
+                    title: 'Quick Metrics',
+                    child: _StationMetricsTable(station: station),
+                  ),
+                  const SizedBox(height: 16),
+                  _SectionCard(
+                    title: 'Forecast',
+                    child: _StationChart(station: station),
+                  ),
+                  const SizedBox(height: 16),
+                  _SectionCard(
+                    title: 'Recent Activity',
+                    child: _StationLogsList(
+                      logs: station.logs.take(3).toList(growable: false),
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -393,63 +555,67 @@ class _StationMetricsTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final List<MapEntry<String, String>> rows = <MapEntry<String, String>>[
-      MapEntry<String, String>('Station code', station.stationCode),
-      MapEntry<String, String>('Status', station.status.label),
-      MapEntry<String, String>('Capacity', '${station.metrics.capacity} docks'),
-      MapEntry<String, String>(
-        'Available cycles',
-        '${station.metrics.availableCycles}',
+    final List<_MetricCardData> metrics = <_MetricCardData>[
+      _MetricCardData(
+        label: 'Available',
+        value: '${station.metrics.availableCycles}',
+        helper: 'cycles ready',
+        accentColor: station.markerColor,
       ),
-      MapEntry<String, String>(
-        'Reserved now',
-        '${station.metrics.reservedCycles}',
+      _MetricCardData(
+        label: 'Capacity',
+        value: '${station.metrics.capacity}',
+        helper: 'total docks',
+        accentColor: const Color(0xFF0F766E),
       ),
-      MapEntry<String, String>(
-        'Pending refill',
-        '${station.metrics.pendingRefill}',
+      _MetricCardData(
+        label: 'Reserved',
+        value: '${station.metrics.reservedCycles}',
+        helper: 'current demand',
+        accentColor: const Color(0xFF2563EB),
       ),
-      MapEntry<String, String>(
-        'Service level',
-        '${station.metrics.serviceLevel}%',
+      _MetricCardData(
+        label: 'Pending Refill',
+        value: '${station.metrics.pendingRefill}',
+        helper: 'cycles needed',
+        accentColor: const Color(0xFFEA580C),
       ),
-      MapEntry<String, String>('Updated at', station.lastUpdatedLabel),
+      _MetricCardData(
+        label: 'Service Level',
+        value: '${station.metrics.serviceLevel}%',
+        helper: 'current health',
+        accentColor: station.status.badgeColor,
+      ),
+      _MetricCardData(
+        label: 'Status',
+        value: station.status.label,
+        helper: station.lastUpdatedLabel,
+        accentColor: const Color(0xFF475569),
+      ),
     ];
 
-    return Table(
-      border: TableBorder.all(
-        color: const Color(0xFFE5E7EB),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      columnWidths: const <int, TableColumnWidth>{
-        0: FlexColumnWidth(1.2),
-        1: FlexColumnWidth(1.4),
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double spacing = 12;
+        final double availableWidth = constraints.maxWidth;
+        final bool singleColumn = availableWidth < 320;
+        final double tileWidth = singleColumn
+            ? availableWidth
+            : (availableWidth - spacing) / 2;
+
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: metrics
+              .map(
+                (_MetricCardData metric) => SizedBox(
+                  width: tileWidth,
+                  child: _MetricCard(metric: metric),
+                ),
+              )
+              .toList(growable: false),
+        );
       },
-      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-      children: rows
-          .map((MapEntry<String, String> row) {
-            return TableRow(
-              children: <Widget>[
-                _TableCellText(
-                  text: row.key,
-                  backgroundColor: const Color(0xFFF8FAFC),
-                  textStyle: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF334155),
-                  ),
-                ),
-                _TableCellText(
-                  text: row.value,
-                  backgroundColor: Colors.white,
-                  textStyle: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF111827),
-                  ),
-                ),
-              ],
-            );
-          })
-          .toList(growable: false),
     );
   }
 }
@@ -461,78 +627,32 @@ class _StationChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final int maxValue = station.chartData.fold<int>(1, (
-      int currentMax,
-      StationChartPoint point,
-    ) {
-      return point.value > currentMax ? point.value : currentMax;
-    });
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double spacing = 12;
+        final double availableWidth = constraints.maxWidth;
+        final bool singleColumn = availableWidth < 300;
+        final double tileWidth = singleColumn
+            ? availableWidth
+            : (availableWidth - spacing) / 2;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        const Text(
-          'Expected availability trend',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: Color(0xFF475569),
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 14),
-        ...station.chartData.map((StationChartPoint point) {
-          final double ratio = point.value / maxValue;
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: <Widget>[
-                SizedBox(
-                  width: 56,
-                  child: Text(
-                    point.label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF334155),
-                    ),
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: station.chartData
+              .map(
+                (StationChartPoint point) => SizedBox(
+                  width: tileWidth,
+                  child: _ForecastCard(
+                    label: point.label,
+                    value: '${point.value} cycles',
+                    color: station.status.chartColor,
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(999),
-                    child: LinearProgressIndicator(
-                      minHeight: 14,
-                      value: ratio.clamp(0.0, 1.0),
-                      backgroundColor: const Color(0xFFE2E8F0),
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        station.status.chartColor,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                SizedBox(
-                  width: 32,
-                  child: Text(
-                    '${point.value}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.end,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF111827),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        }),
-      ],
+              )
+              .toList(growable: false),
+        );
+      },
     );
   }
 }
@@ -630,27 +750,205 @@ class _StationLogsList extends StatelessWidget {
   }
 }
 
-class _TableCellText extends StatelessWidget {
-  const _TableCellText({
-    required this.text,
-    required this.backgroundColor,
-    required this.textStyle,
+class _MetricCardData {
+  const _MetricCardData({
+    required this.label,
+    required this.value,
+    required this.helper,
+    required this.accentColor,
   });
 
-  final String text;
-  final Color backgroundColor;
-  final TextStyle textStyle;
+  final String label;
+  final String value;
+  final String helper;
+  final Color accentColor;
+}
+
+class _MetricCard extends StatelessWidget {
+  const _MetricCard({required this.metric});
+
+  final _MetricCardData metric;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-      color: backgroundColor,
-      child: Text(
-        text,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: textStyle,
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: metric.accentColor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: metric.accentColor.withValues(alpha: 0.18)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              metric.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF475569),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              metric.value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: metric.accentColor,
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              metric.helper,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Color(0xFF64748B), height: 1.3),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ForecastCard extends StatelessWidget {
+  const _ForecastCard({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: <Widget>[
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF475569),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF111827),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StationColorLegend extends StatelessWidget {
+  const _StationColorLegend({
+    required this.stations,
+    required this.selectedStationId,
+  });
+
+  final List<StationMapStation> stations;
+  final String selectedStationId;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: stations
+          .map(
+            (StationMapStation station) => _LegendChip(
+              label: station.stationCode,
+              color: station.markerColor,
+              isSelected: station.id == selectedStationId,
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+}
+
+class _LegendChip extends StatelessWidget {
+  const _LegendChip({
+    required this.label,
+    required this.color,
+    required this.isSelected,
+  });
+
+  final String label;
+  final Color color;
+  final bool isSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: isSelected ? color.withValues(alpha: 0.18) : Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: isSelected ? color : const Color(0xFFD7DEE8),
+          width: isSelected ? 1.4 : 1,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF334155),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -816,6 +1114,8 @@ class MockStationMapRepository implements StationMapRepository {
         id: 'station-933',
         stationCode: 'ST-481',
         position: LatLng(37.5252, 126.9250),
+        markerHue: BitmapDescriptor.hueGreen,
+        markerColor: Color(0xFF16A34A),
         address: '서울특별시 영등포구 여의나루로 76, IFC몰 2번 게이트 앞 공공 자전거 거치 구역',
         status: StationStatus.healthy,
         statusSummary:
@@ -855,6 +1155,8 @@ class MockStationMapRepository implements StationMapRepository {
         id: 'station-4652',
         stationCode: 'ST-2425',
         position: LatLng(37.5131, 127.1025),
+        markerHue: BitmapDescriptor.hueAzure,
+        markerColor: Color(0xFF0284C7),
         address: '서울특별시 송파구 올림픽로 300, 롯데월드타워 월드파크 7번 출입구 맞은편 자전거 스테이션',
         status: StationStatus.alert,
         statusSummary:
@@ -900,6 +1202,8 @@ class MockStationMapRepository implements StationMapRepository {
         id: 'station-956',
         stationCode: 'ST-1331',
         position: LatLng(37.5797, 126.9770),
+        markerHue: BitmapDescriptor.hueBlue,
+        markerColor: Color(0xFF2563EB),
         address: '서울특별시 종로구 세종대로 172, 광화문광장 북측 버스정류장 인근 자전거 대여소',
         status: StationStatus.healthy,
         statusSummary:
@@ -933,6 +1237,8 @@ class MockStationMapRepository implements StationMapRepository {
         id: 'station-906',
         stationCode: 'ST-454',
         position: LatLng(37.4981, 127.0276),
+        markerHue: BitmapDescriptor.hueOrange,
+        markerColor: Color(0xFFEA580C),
         address: '서울특별시 강남구 강남대로 390, 강남역 11번 출구와 테헤란로 횡단보도 사이 보행로 옆',
         status: StationStatus.restocking,
         statusSummary:
@@ -972,6 +1278,8 @@ class MockStationMapRepository implements StationMapRepository {
         id: 'station-905',
         stationCode: 'ST-453',
         position: LatLng(37.5563, 126.9236),
+        markerHue: BitmapDescriptor.hueRose,
+        markerColor: Color(0xFFDB2777),
         address: '서울특별시 마포구 양화로 188, 홍대입구역 8번 출구 앞 광장 연결 보행통로 인근',
         status: StationStatus.healthy,
         statusSummary:
@@ -1016,6 +1324,8 @@ class StationMapStation {
     required this.id,
     required this.stationCode,
     required this.position,
+    required this.markerHue,
+    required this.markerColor,
     required this.address,
     required this.status,
     required this.statusSummary,
@@ -1028,6 +1338,8 @@ class StationMapStation {
   final String id;
   final String stationCode;
   final LatLng position;
+  final double markerHue;
+  final Color markerColor;
   final String address;
   final StationStatus status;
   final String statusSummary;
