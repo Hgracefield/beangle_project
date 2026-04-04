@@ -6,8 +6,6 @@ class ChatService {
 
   static const String roomCollection = 'chat_rooms';
   static const String adminParticipantId = 'admin';
-  static const String _userRole = 'user';
-  static const String _adminRole = 'admin';
 
   static FirebaseFirestore get _firestore => FirebaseFirestore.instance;
 
@@ -40,9 +38,8 @@ class ChatService {
       'lastSenderId': '',
       'lastSenderName': '',
       'lastSenderRole': '',
-      'unreadCounts': <String, int>{_userRole: 0, _adminRole: 0},
-      'userUnreadCount': 0,
-      'adminUnreadCount': 0,
+      'unreadCountAdmin': 0,
+      'unreadCountUser': 0,
       'isClosed': false,
     }, SetOptions(merge: true));
 
@@ -106,59 +103,20 @@ class ChatService {
       'createdAt': FieldValue.serverTimestamp(),
     });
 
-    final DocumentReference<Map<String, dynamic>> roomRef = _firestore
+    await _firestore
         .collection(roomCollection)
-        .doc(roomId);
-
-    await _firestore.runTransaction((Transaction transaction) async {
-      final DocumentSnapshot<Map<String, dynamic>> roomSnapshot =
-          await transaction.get(roomRef);
-      final Map<String, dynamic>? roomData = roomSnapshot.data();
-
-      final int nextUserUnreadCount = senderRole == _adminRole
-          ? unreadCountForRole(roomData, _userRole) + 1
-          : 0;
-      final int nextAdminUnreadCount = senderRole == _userRole
-          ? unreadCountForRole(roomData, _adminRole) + 1
-          : 0;
-
-      transaction.set(roomRef, <String, dynamic>{
-        'updatedAt': FieldValue.serverTimestamp(),
-        'lastMessage': trimmed,
-        'lastSenderId': senderId,
-        'lastSenderName': senderName,
-        'lastSenderRole': senderRole,
-        'unreadCounts': <String, int>{
-          _userRole: nextUserUnreadCount,
-          _adminRole: nextAdminUnreadCount,
-        },
-        'userUnreadCount': nextUserUnreadCount,
-        'adminUnreadCount': nextAdminUnreadCount,
-      }, SetOptions(merge: true));
-    });
-  }
-
-  static int unreadCountForRole(Map<String, dynamic>? data, String role) {
-    if (data == null) {
-      return 0;
-    }
-
-    final dynamic unreadCounts = data['unreadCounts'];
-    if (unreadCounts is Map) {
-      final dynamic count = unreadCounts[role];
-      final int? parsed = int.tryParse(count?.toString() ?? '');
-      if (parsed != null) {
-        return parsed;
-      }
-    }
-
-    final String camelKey = '${role}UnreadCount';
-    final String pascalKey =
-        '${role[0].toUpperCase()}${role.substring(1)}UnreadCount';
-    return int.tryParse(
-          data[camelKey]?.toString() ?? data[pascalKey]?.toString() ?? '',
-        ) ??
-        0;
+        .doc(roomId)
+        .set(<String, dynamic>{
+          'updatedAt': FieldValue.serverTimestamp(),
+          'lastMessage': trimmed,
+          'lastSenderId': senderId,
+          'lastSenderName': senderName,
+          'lastSenderRole': senderRole,
+          if (senderRole == 'admin')
+            'unreadCountUser': FieldValue.increment(1)
+          else
+            'unreadCountAdmin': FieldValue.increment(1),
+        }, SetOptions(merge: true));
   }
 
   static Future<void> markRoomRead({
@@ -167,14 +125,21 @@ class ChatService {
   }) async {
     _assertReady();
 
-    final String legacyKey = '${role}UnreadCount';
     await _firestore.collection(roomCollection).doc(roomId).set(
       <String, dynamic>{
-        'unreadCounts': <String, int>{role: 0},
-        legacyKey: 0,
+        if (role == 'admin') 'unreadCountAdmin': 0 else 'unreadCountUser': 0,
       },
       SetOptions(merge: true),
     );
+  }
+
+  static int unreadCountForRole(Map<String, dynamic>? roomData, String role) {
+    if (roomData == null) {
+      return 0;
+    }
+
+    final String key = role == 'admin' ? 'unreadCountAdmin' : 'unreadCountUser';
+    return (roomData[key] as num?)?.toInt() ?? 0;
   }
 
   static void _assertReady() {
