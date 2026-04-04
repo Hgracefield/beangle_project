@@ -52,33 +52,29 @@ class CycleStationMarker extends StatelessWidget {
     required DateTime targetTime,
     required int workCount,
   }) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+
     if (!isActionWindowActive) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('재배치 시간이 아닙니다')),
-      );
+      messenger.showSnackBar(const SnackBar(content: Text('재배치 시간이 아닙니다')));
       return;
     }
 
     if (workCount <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('전송할 작업 수량이 없습니다')),
-      );
+      messenger.showSnackBar(const SnackBar(content: Text('전송할 작업 수량이 없습니다')));
       return;
     }
 
-    final int? workerId =
-        int.tryParse(_storage.read('worker_id')?.toString() ?? '');
+    final int? workerId = int.tryParse(
+      _storage.read('worker_id')?.toString() ?? '',
+    );
     if (workerId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('작업자 로그인 정보가 없습니다')),
-      );
+      messenger.showSnackBar(const SnackBar(content: Text('작업자 로그인 정보가 없습니다')));
       return;
     }
 
-    final int? stationId =
-        int.tryParse(station.id.replaceFirst('ST-', ''));
+    final int? stationId = int.tryParse(station.id.replaceFirst('ST-', ''));
     if (stationId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         const SnackBar(content: Text('스테이션 번호를 확인할 수 없습니다')),
       );
       return;
@@ -87,14 +83,13 @@ class CycleStationMarker extends StatelessWidget {
     try {
       final List<WorkRecord> works = await _workApi.fetchWorks();
       final bool alreadyWorked = works.any((WorkRecord item) {
-        return item.stationId == stationId && _isSameSlot(item.worktime, targetTime);
+        return item.stationId == stationId &&
+            _isSameSlot(item.worktime, targetTime);
       });
 
       if (alreadyWorked) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('같은 시간대에 이미 해당 스테이션 작업이 등록되었습니다'),
-          ),
+        messenger.showSnackBar(
+          const SnackBar(content: Text('같은 시간대에 이미 해당 스테이션 작업이 등록되었습니다')),
         );
         return;
       }
@@ -108,21 +103,19 @@ class CycleStationMarker extends StatelessWidget {
 
       final int result = await _workApi.insertWork(payload);
       if (result != 1) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('같은 시간대에 이미 해당 스테이션 작업이 등록되었습니다'),
-          ),
+        messenger.showSnackBar(
+          const SnackBar(content: Text('같은 시간대에 이미 해당 스테이션 작업이 등록되었습니다')),
         );
         return;
       }
 
       await onWorkSubmitted?.call();
 
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         SnackBar(content: Text('${station.name} 작업 내역이 저장되었습니다')),
       );
     } catch (error) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         SnackBar(content: Text('작업 내역 저장에 실패했습니다: $error')),
       );
     }
@@ -132,19 +125,18 @@ class CycleStationMarker extends StatelessWidget {
     required BuildContext context,
     required DateTime targetTime,
   }) async {
-    final int? workerId =
-        int.tryParse(_storage.read('worker_id')?.toString() ?? '');
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final int? workerId = int.tryParse(
+      _storage.read('worker_id')?.toString() ?? '',
+    );
     if (workerId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('작업자 로그인 정보가 없습니다')),
-      );
+      messenger.showSnackBar(const SnackBar(content: Text('작업자 로그인 정보가 없습니다')));
       return;
     }
 
-    final int? stationId =
-        int.tryParse(station.id.replaceFirst('ST-', ''));
+    final int? stationId = int.tryParse(station.id.replaceFirst('ST-', ''));
     if (stationId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         const SnackBar(content: Text('스테이션 번호를 확인할 수 없습니다')),
       );
       return;
@@ -158,77 +150,67 @@ class CycleStationMarker extends StatelessWidget {
         requestMessage: '작업 요청',
       );
       if (ok) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        messenger.showSnackBar(
           const SnackBar(content: Text('관리자에게 작업 요청을 보냈어요')),
         );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('작업 요청에 실패했어요')),
-        );
+        messenger.showSnackBar(const SnackBar(content: Text('작업 요청에 실패했어요')));
       }
     } catch (error) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('작업 요청에 실패했습니다: $error')),
-      );
+      messenger.showSnackBar(SnackBar(content: Text('작업 요청에 실패했습니다: $error')));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final Color markerBorderColor =
-        isCompleted ? const Color(0xFF2F6BFF) : workerThemeColor;
+    final Color markerBorderColor = isCompleted
+        ? const Color(0xFF2F6BFF)
+        : workerThemeColor;
 
     return GestureDetector(
       onTap: () {
-        final int? inflowValue =
-            cumulativeInflow == null ? null : cumulativeInflow!.round();
-        final int? outflowValue =
-            cumulativeOutflow == null ? null : cumulativeOutflow!.round();
-        final int? netFlowValue =
-            (inflowValue != null && outflowValue != null)
-                ? inflowValue - outflowValue
-                : null;
-        final int? preInflowValue =
-            preInflow == null ? null : preInflow!.round();
-        final int? preOutflowValue =
-            preOutflow == null ? null : preOutflow!.round();
+        final int? inflowValue = cumulativeInflow?.round();
+        final int? outflowValue = cumulativeOutflow?.round();
+        final int? netFlowValue = (inflowValue != null && outflowValue != null)
+            ? inflowValue - outflowValue
+            : null;
+        final int? preInflowValue = preInflow?.round();
+        final int? preOutflowValue = preOutflow?.round();
         final int? preNetValue =
             (preInflowValue != null && preOutflowValue != null)
-                ? preInflowValue - preOutflowValue
-                : null;
-        final int? predictedCountAtRelocation =
-            preNetValue == null ? null : currentCount + preNetValue;
-        final int? actionDelta =
-            (netFlowValue != null && preNetValue != null)
-                ? netFlowValue - currentCount + preNetValue
-                : null;
+            ? preInflowValue - preOutflowValue
+            : null;
+        final int? predictedCountAtRelocation = preNetValue == null
+            ? null
+            : currentCount + preNetValue;
+        final int? actionDelta = (netFlowValue != null && preNetValue != null)
+            ? netFlowValue - currentCount + preNetValue
+            : null;
         final int? limitedRecoveryCount =
             (actionDelta != null &&
-                    actionDelta < 0 &&
-                    predictedCountAtRelocation != null &&
-                    actionDelta.abs() > predictedCountAtRelocation)
-                ? (predictedCountAtRelocation - station.rackCount)
-                    .clamp(0, predictedCountAtRelocation)
-                    .toInt()
-                : null;
-        final String actionGuide =
-            actionDelta == null
-                ? '데이터 없음'
-                : actionDelta == 0
-                    ? '현재 상태 유지'
-                    : actionDelta > 0
-                        ? '추가 배치 ${actionDelta}대'
-                        : limitedRecoveryCount != null
-                            ? limitedRecoveryCount == 0
-                                ? '회수 없음 (예측 댓수가 거치대 수 이하)'
-                                : '회수 ${limitedRecoveryCount}대 (거치대 수 ${station.rackCount}대만 남김)'
-                            : '회수 ${actionDelta.abs()}대 (다른 곳 이동)';
-        final int submissionCount =
-            actionDelta == null
-                ? 0
-                : actionDelta > 0
-                    ? actionDelta
-                    : limitedRecoveryCount ?? actionDelta.abs();
+                actionDelta < 0 &&
+                predictedCountAtRelocation != null &&
+                actionDelta.abs() > predictedCountAtRelocation)
+            ? (predictedCountAtRelocation - station.rackCount)
+                  .clamp(0, predictedCountAtRelocation)
+                  .toInt()
+            : null;
+        final String actionGuide = actionDelta == null
+            ? '데이터 없음'
+            : actionDelta == 0
+            ? '현재 상태 유지'
+            : actionDelta > 0
+            ? '추가 배치 $actionDelta대'
+            : limitedRecoveryCount != null
+            ? limitedRecoveryCount == 0
+                  ? '회수 없음 (예측 댓수가 거치대 수 이하)'
+                  : '회수 $limitedRecoveryCount대 (거치대 수 ${station.rackCount}대만 남김)'
+            : '회수 ${actionDelta.abs()}대 (다른 곳 이동)';
+        final int submissionCount = actionDelta == null
+            ? 0
+            : actionDelta > 0
+            ? actionDelta
+            : limitedRecoveryCount ?? actionDelta.abs();
         final DateTime activationStart = nextRelocationTime.subtract(
           const Duration(minutes: 30),
         );
@@ -273,7 +255,7 @@ class CycleStationMarker extends StatelessWidget {
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: accentColor.withOpacity(0.16),
+                            color: accentColor.withValues(alpha: 0.16),
                             shape: BoxShape.circle,
                           ),
                           child: Icon(
@@ -322,15 +304,13 @@ class CycleStationMarker extends StatelessWidget {
                     ),
                     _DialogInfoLine(
                       label: '예측 누적 유입량',
-                      value:
-                          inflowValue == null ? '데이터 없음' : '$inflowValue대',
+                      value: inflowValue == null ? '데이터 없음' : '$inflowValue대',
                       labelColor: labelTextColor,
                       valueColor: primaryTextColor,
                     ),
                     _DialogInfoLine(
                       label: '예측 누적 유출량',
-                      value:
-                          outflowValue == null ? '데이터 없음' : '$outflowValue대',
+                      value: outflowValue == null ? '데이터 없음' : '$outflowValue대',
                       labelColor: labelTextColor,
                       valueColor: primaryTextColor,
                     ),
@@ -368,8 +348,9 @@ class CycleStationMarker extends StatelessWidget {
                           }
                         },
                         style: FilledButton.styleFrom(
-                          backgroundColor:
-                              isActionWindowActive ? accentColor : workerThemeColor,
+                          backgroundColor: isActionWindowActive
+                              ? accentColor
+                              : workerThemeColor,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                         ),
@@ -388,10 +369,7 @@ class CycleStationMarker extends StatelessWidget {
                       isActionWindowActive
                           ? '재배치 시간 기준 30분 전부터 30분 후까지만 활성화됩니다.'
                           : '현재 시간은 작업 시간대가 아니에요. 승인 요청을 보낼 수 있습니다.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: labelTextColor,
-                      ),
+                      style: TextStyle(fontSize: 12, color: labelTextColor),
                     ),
                   ],
                 ),
