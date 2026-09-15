@@ -20,10 +20,12 @@ class WorkerLogin extends StatefulWidget {
 
 class _WorkerLoginState extends State<WorkerLogin> {
   static const String _logoAssetPath = 'images/beangle_logo.png';
+  static const String _loginHistoryStorageKey = 'worker_login_history';
 
   final GetStorage _storage = GetStorage();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  List<String> _savedEmails = const <String>[];
 
   String get _workerApiBaseUrl {
     if (kIsWeb ||
@@ -37,7 +39,37 @@ class _WorkerLoginState extends State<WorkerLogin> {
   @override
   void initState() {
     super.initState();
-  
+    _loadLoginHistory();
+  }
+
+  void _loadLoginHistory() {
+    final List<dynamic>? storedEmails = _storage.read<List<dynamic>>(
+      _loginHistoryStorageKey,
+    );
+    _savedEmails = (storedEmails ?? <dynamic>[])
+        .map((dynamic item) => item.toString().trim())
+        .where((String item) => item.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  Future<void> _saveSuccessfulEmail(String email) async {
+    final String trimmedEmail = email.trim();
+    if (trimmedEmail.isEmpty) {
+      return;
+    }
+
+    final List<String> nextEmails = <String>[
+      trimmedEmail,
+      ..._savedEmails.where((String item) => item != trimmedEmail),
+    ];
+    final List<String> limitedEmails = nextEmails.take(5).toList(growable: false);
+    await _storage.write(_loginHistoryStorageKey, limitedEmails);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _savedEmails = limitedEmails;
+    });
   }
 
   @override
@@ -66,6 +98,7 @@ class _WorkerLoginState extends State<WorkerLogin> {
     final password = _passwordController.text;
 
     if (email == 'super' && password == '123456') {
+      await _saveSuccessfulEmail(email);
       Get.snackbar('Success', '슈퍼 관리자 로그인 성공!');
       Get.off(() => const Dashboard());
       return;
@@ -112,6 +145,7 @@ class _WorkerLoginState extends State<WorkerLogin> {
           if (workerId != null) {
             await _storage.write('worker_id', workerId);
           }
+          await _saveSuccessfulEmail(email);
           if (!mounted) {
             return;
           }
@@ -195,10 +229,11 @@ class _WorkerLoginState extends State<WorkerLogin> {
 
               SizedBox(height: sectionGap),
 
-              CustomTextField(
+              EmailHistoryTextField(
                 hint: "이메일 입력",
                 icon: Icons.email,
                 controller: _emailController,
+                suggestions: _savedEmails,
                 keyboardType: TextInputType.emailAddress,
                 textInputAction: TextInputAction.next,
               ),

@@ -21,10 +21,7 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
         foregroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.menu),
-          onPressed: () {},
-        ),
+        leading: IconButton(icon: const Icon(Icons.menu), onPressed: () {}),
         title: const Text(
           '따릉이 재배치',
           style: TextStyle(fontWeight: FontWeight.w700),
@@ -38,10 +35,7 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
       ),
       body: IndexedStack(
         index: _selectedIndex,
-        children: const [
-          MapForWorkerPage(),
-          WorkerChatListPage(),
-        ],
+        children: const [MapForWorkerPage(), WorkerChatListPage()],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
@@ -51,7 +45,7 @@ class _WorkerHomePageState extends State<WorkerHomePage> {
           });
         },
         backgroundColor: Colors.white,
-        indicatorColor: workerThemeColor.withOpacity(0.18),
+        indicatorColor: workerThemeColor.withValues(alpha: 0.18),
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.map_outlined),

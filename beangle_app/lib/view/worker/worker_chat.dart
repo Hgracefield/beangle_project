@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:beangle_app/model/chat_service.dart';
 import 'package:beangle_app/settings/firebase_bootstrap.dart';
 import 'package:beangle_app/view/worker/worker_theme.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 class WorkerChatPage extends StatefulWidget {
@@ -24,13 +27,108 @@ class WorkerChatPage extends StatefulWidget {
 class _WorkerChatPageState extends State<WorkerChatPage> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  StreamSubscription? _roomSubscription;
   bool _isSending = false;
 
   @override
+  void initState() {
+    super.initState();
+    _startReadSync();
+  }
+
+  @override
   void dispose() {
+    _roomSubscription?.cancel();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _startReadSync() {
+    if (!FirebaseBootstrap.isReady) {
+      return;
+    }
+
+    _roomSubscription = ChatService.watchRoom(widget.roomId).listen((snapshot) {
+      final Map<String, dynamic>? data = snapshot.data();
+      if (ChatService.unreadCountForRole(data, 'admin') > 0) {
+        ChatService.markRoomRead(roomId: widget.roomId, role: 'admin');
+      }
+    });
+  }
+
+  String _formatMessageTime(dynamic rawTimestamp) {
+    final Timestamp? timestamp = rawTimestamp as Timestamp?;
+    if (timestamp == null) {
+      return '';
+    }
+
+    final DateTime sentAt = timestamp.toDate().toLocal();
+    final DateTime now = DateTime.now();
+    final String month = sentAt.month.toString().padLeft(2, '0');
+    final String day = sentAt.day.toString().padLeft(2, '0');
+    final String hour = sentAt.hour.toString().padLeft(2, '0');
+    final String minute = sentAt.minute.toString().padLeft(2, '0');
+
+    if (sentAt.year == now.year &&
+        sentAt.month == now.month &&
+        sentAt.day == now.day) {
+      return '$hour:$minute';
+    }
+
+    return '$month/$day $hour:$minute';
+  }
+
+  DateTime? _messageDate(dynamic rawTimestamp) {
+    final Timestamp? timestamp = rawTimestamp as Timestamp?;
+    return timestamp?.toDate().toLocal();
+  }
+
+  bool _shouldShowDateDivider({
+    required List docs,
+    required int index,
+  }) {
+    final DateTime? current = _messageDate(docs[index].data()['createdAt']);
+    if (current == null) {
+      return false;
+    }
+
+    if (index == 0) {
+      return true;
+    }
+
+    final DateTime? previous = _messageDate(docs[index - 1].data()['createdAt']);
+    if (previous == null) {
+      return true;
+    }
+
+    return current.year != previous.year ||
+        current.month != previous.month ||
+        current.day != previous.day;
+  }
+
+  String _formatDateDivider(dynamic rawTimestamp) {
+    final DateTime? date = _messageDate(rawTimestamp);
+    if (date == null) {
+      return '';
+    }
+
+    final DateTime now = DateTime.now();
+    final DateTime today = DateTime(now.year, now.month, now.day);
+    final DateTime target = DateTime(date.year, date.month, date.day);
+    final int difference = today.difference(target).inDays;
+
+    if (difference == 0) {
+      return '오늘';
+    }
+
+    if (difference == 1) {
+      return '어제';
+    }
+
+    final String month = date.month.toString().padLeft(2, '0');
+    final String day = date.day.toString().padLeft(2, '0');
+    return '$month/$day';
   }
 
   Future<void> _sendMessage() async {
@@ -143,45 +241,103 @@ class _WorkerChatPageState extends State<WorkerChatPage> {
                     final data = docs[index].data();
                     final bool isMine =
                         data['senderRole']?.toString() == 'admin';
+                    final String sentTime = _formatMessageTime(
+                      data['createdAt'],
+                    );
+                    final bool showDateDivider = _shouldShowDateDivider(
+                      docs: docs,
+                      index: index,
+                    );
+                    final String dateDividerText = _formatDateDivider(
+                      data['createdAt'],
+                    );
 
-                    return Align(
-                      alignment: isMine
-                          ? Alignment.centerRight
-                          : Alignment.centerLeft,
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 10,
-                        ),
-                        constraints: const BoxConstraints(maxWidth: 320),
-                        decoration: BoxDecoration(
-                          color: isMine
-                              ? workerThemeColor
-                              : const Color(0xFFF1F4F6),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              data['senderName']?.toString() ?? '',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: isMine ? Colors.white70 : Colors.black54,
+                    return Column(
+                      children: [
+                        if (showDateDivider && dateDividerText.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(
+                              top: 8,
+                              bottom: 14,
+                            ),
+                            child: Center(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  dateDividerText,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.black54,
+                                  ),
+                                ),
                               ),
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              data['text']?.toString() ?? '',
-                              style: TextStyle(
-                                color: isMine ? Colors.white : Colors.black87,
-                              ),
+                          ),
+                        Align(
+                          alignment: isMine
+                              ? Alignment.centerRight
+                              : Alignment.centerLeft,
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 10),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
                             ),
-                          ],
+                            constraints: const BoxConstraints(maxWidth: 320),
+                            decoration: BoxDecoration(
+                              color: isMine
+                                  ? workerThemeColor
+                                  : const Color(0xFFF1F4F6),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  data['senderName']?.toString() ?? '',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: isMine
+                                        ? Colors.white70
+                                        : Colors.black54,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  data['text']?.toString() ?? '',
+                                  style: TextStyle(
+                                    color: isMine ? Colors.white : Colors.black87,
+                                  ),
+                                ),
+                                if (sentTime.isNotEmpty) ...[
+                                  const SizedBox(height: 6),
+                                  Align(
+                                    alignment: Alignment.centerRight,
+                                    child: Text(
+                                      sentTime,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: isMine
+                                            ? Colors.white70
+                                            : Colors.black45,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
                         ),
-                      ),
+                      ],
                     );
                   },
                 );

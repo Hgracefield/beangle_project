@@ -1,12 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:beangle_app/model/chat_service.dart';
 import 'package:beangle_app/view/auth/auth_page.dart';
 import 'package:beangle_app/model/reservation_api.dart';
 import 'package:beangle_app/model/reservation_info.dart';
+import 'package:beangle_app/settings/firebase_bootstrap.dart';
 import 'package:beangle_app/view/user/user_chat_page.dart';
 import 'package:beangle_app/view/user/reservation.dart';
 import 'package:beangle_app/view/user/user_profile_page.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -38,6 +41,8 @@ class _MapForUserPageState extends State<MapForUserPage> {
   final ReservationApi _reservationApi = ReservationApi();
   Timer? _clockRefreshTimer;
   Timer? _reservationRefreshTimer;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+  _userChatSubscription;
 
   // 지도와 화면 상태.
   late latlong.LatLng _currentPosition;
@@ -72,6 +77,9 @@ class _MapForUserPageState extends State<MapForUserPage> {
   String _userEmail = '';
   String _userPhone = '';
   bool _isUserInfoLoading = false;
+  bool _hasSeenInitialUserRoomSnapshot = false;
+  int _lastUserUnreadCount = 0;
+  String? _lastUserNotifiedMessage;
 
   // 학습 모델이 생성한 시간대별 예측 자산 전체.
   Map<String, dynamic> _predictionData = const {};
@@ -134,10 +142,12 @@ class _MapForUserPageState extends State<MapForUserPage> {
     _getCurrentLocation();
     _fetchWeather();
     _startRealtimeRefresh();
+    _startUserChatNotifications();
   }
 
   @override
   void dispose() {
+    _userChatSubscription?.cancel();
     _clockRefreshTimer?.cancel();
     _reservationRefreshTimer?.cancel();
     super.dispose();
@@ -339,6 +349,124 @@ class _MapForUserPageState extends State<MapForUserPage> {
         userName: _userName,
         userEmail: _userEmail,
       ),
+    );
+  }
+
+  void _startUserChatNotifications() {
+    if (!FirebaseBootstrap.isReady) {
+      return;
+    }
+
+    final String? userId = _userId;
+    if (userId == null || userId.isEmpty) {
+      return;
+    }
+
+    _userChatSubscription?.cancel();
+    _userChatSubscription = ChatService.watchRoom(
+      ChatService.roomIdForUser(userId),
+    ).listen((DocumentSnapshot<Map<String, dynamic>> snapshot) {
+      final Map<String, dynamic>? data = snapshot.data();
+      final int unreadCount = ChatService.unreadCountForRole(data, 'user');
+
+      if (_hasSeenInitialUserRoomSnapshot &&
+          unreadCount > _lastUserUnreadCount &&
+          mounted) {
+        final String message = data?['lastMessage']?.toString() ?? '';
+        if (data?['lastSenderRole']?.toString() == 'admin' &&
+            message.isNotEmpty &&
+            message != _lastUserNotifiedMessage) {
+          _lastUserNotifiedMessage = message;
+          _showIncomingChatBanner(
+            title: '관리자의 새 메시지',
+            message: message,
+          );
+        }
+      }
+
+      _hasSeenInitialUserRoomSnapshot = true;
+      _lastUserUnreadCount = unreadCount;
+    });
+  }
+
+  void _showIncomingChatBanner({
+    required String title,
+    required String message,
+  }) {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..clearMaterialBanners()
+      ..showMaterialBanner(
+        MaterialBanner(
+          content: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(
+                title,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 4),
+              Text(message, maxLines: 2, overflow: TextOverflow.ellipsis),
+            ],
+          ),
+          leading: const Icon(Icons.notifications_active_outlined),
+          backgroundColor: _panelColor,
+          actions: <Widget>[
+            TextButton(
+              onPressed: () {
+                messenger.clearMaterialBanners();
+                _openAdminChat();
+              },
+              child: const Text('열기'),
+            ),
+            TextButton(
+              onPressed: messenger.clearMaterialBanners,
+              child: const Text('닫기'),
+            ),
+          ],
+        ),
+      );
+
+    Future<void>.delayed(const Duration(seconds: 4), () {
+      if (mounted) {
+        messenger.clearMaterialBanners();
+      }
+    });
+  }
+
+  Widget _buildUserChatBadge() {
+    final String? userId = _userId;
+    if (!FirebaseBootstrap.isReady || userId == null || userId.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: ChatService.watchRoom(ChatService.roomIdForUser(userId)),
+      builder: (context, snapshot) {
+        final int unreadCount = ChatService.unreadCountForRole(
+          snapshot.data?.data(),
+          'user',
+        );
+        if (unreadCount <= 0) {
+          return const SizedBox.shrink();
+        }
+
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: _inputFillColor,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            unreadCount > 99 ? '99+' : '$unreadCount',
+            style: TextStyle(
+              color: _primaryTextColor,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -1642,6 +1770,7 @@ class _MapForUserPageState extends State<MapForUserPage> {
                   color: _primaryTextColor,
                 ),
                 title: Text('채팅하기', style: TextStyle(color: _primaryTextColor)),
+                trailing: _buildUserChatBadge(),
                 onTap: () {
                   Navigator.of(context).pop();
                   _openAdminChat();

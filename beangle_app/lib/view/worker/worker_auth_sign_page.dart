@@ -121,7 +121,9 @@ class _WorkerAuthSignPageState extends State<WorkerAuthSignPage> {
     }
 
     final verifiedEmail = _verifiedEmail;
-    if (!_isAuth || verifiedEmail == null || verifiedEmail != _emailController.text.trim()) {
+    if (!_isAuth ||
+        verifiedEmail == null ||
+        verifiedEmail != _emailController.text.trim()) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text("메일 인증을 완료해주세요.")));
@@ -151,8 +153,9 @@ class _WorkerAuthSignPageState extends State<WorkerAuthSignPage> {
 
       if (response.statusCode == 200) {
         final dynamic body = jsonDecode(response.body);
-        final String result =
-            body is Map<String, dynamic> ? body["result"]?.toString() ?? "" : "";
+        final String result = body is Map<String, dynamic>
+            ? body["result"]?.toString() ?? ""
+            : "";
         if (result == "OK") {
           ScaffoldMessenger.of(
             context,
@@ -163,8 +166,9 @@ class _WorkerAuthSignPageState extends State<WorkerAuthSignPage> {
           }
           Get.back();
         } else {
-          final String message =
-              result == "EMAIL_NOT_VERIFIED" ? "메일 인증을 완료해주세요." : "회원가입에 실패했어요.";
+          final String message = result == "EMAIL_NOT_VERIFIED"
+              ? "메일 인증을 완료해주세요."
+              : "회원가입에 실패했어요.";
           ScaffoldMessenger.of(
             context,
           ).showSnackBar(SnackBar(content: Text(message)));
@@ -209,14 +213,13 @@ class _WorkerAuthSignPageState extends State<WorkerAuthSignPage> {
 
     try {
       final email = _emailController.text.trim();
-      final Uri existUri = Uri.parse("$_authApiBaseUrl/worker/exist")
-          .replace(queryParameters: {"email": email});
+      final Uri existUri = Uri.parse(
+        "$_authApiBaseUrl/worker/exist",
+      ).replace(queryParameters: {"email": email});
       final existResponse = await http.get(
         existUri,
         headers: {"Content-Type": "application/json"},
       );
-
-      print(existUri);
 
       if (!mounted) {
         return;
@@ -224,14 +227,17 @@ class _WorkerAuthSignPageState extends State<WorkerAuthSignPage> {
 
       if (existResponse.statusCode != 200) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("메일 확인에 실패했어요. (${existResponse.statusCode})")),
+          SnackBar(
+            content: Text("메일 확인에 실패했어요. (${existResponse.statusCode})"),
+          ),
         );
         return;
       }
 
       final dynamic existBody = jsonDecode(existResponse.body);
-      final dynamic existResult =
-          existBody is Map<String, dynamic> ? existBody["result"] : null;
+      final dynamic existResult = existBody is Map<String, dynamic>
+          ? existBody["result"]
+          : null;
       if (existResult == "Error") {
         ScaffoldMessenger.of(
           context,
@@ -239,8 +245,9 @@ class _WorkerAuthSignPageState extends State<WorkerAuthSignPage> {
         return;
       }
 
-      final int existCount =
-          existResult is int ? existResult : int.tryParse(existResult?.toString() ?? "") ?? 0;
+      final int existCount = existResult is int
+          ? existResult
+          : int.tryParse(existResult?.toString() ?? "") ?? 0;
       if (existCount > 0) {
         ScaffoldMessenger.of(
           context,
@@ -260,8 +267,9 @@ class _WorkerAuthSignPageState extends State<WorkerAuthSignPage> {
 
       if (sendResponse.statusCode == 200) {
         final dynamic sendBody = jsonDecode(sendResponse.body);
-        final String result =
-            sendBody is Map<String, dynamic> ? sendBody["result"]?.toString() ?? "" : "";
+        final String result = sendBody is Map<String, dynamic>
+            ? sendBody["result"]?.toString() ?? ""
+            : "";
         if (result == "OK") {
           setState(() {
             _mailSent = true;
@@ -336,8 +344,9 @@ class _WorkerAuthSignPageState extends State<WorkerAuthSignPage> {
 
       if (response.statusCode == 200) {
         final dynamic body = jsonDecode(response.body);
-        final String result =
-            body is Map<String, dynamic> ? body["result"]?.toString() ?? "" : "";
+        final String result = body is Map<String, dynamic>
+            ? body["result"]?.toString() ?? ""
+            : "";
         if (result == "OK") {
           setState(() {
             _isAuth = true;
@@ -347,9 +356,9 @@ class _WorkerAuthSignPageState extends State<WorkerAuthSignPage> {
             context,
           ).showSnackBar(const SnackBar(content: Text("메일 인증이 완료됐어요.")));
         } else if (result == "EXPIRED") {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text("인증번호가 만료됐어요. 다시 요청해주세요.")));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("인증번호가 만료됐어요. 다시 요청해주세요.")),
+          );
         } else if (result == "INVALID") {
           ScaffoldMessenger.of(
             context,

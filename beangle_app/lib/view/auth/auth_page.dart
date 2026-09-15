@@ -24,12 +24,14 @@ class AuthPage extends StatefulWidget {
 
 class _AuthPageState extends State<AuthPage> {
   static const String _logoAssetPath = 'images/beangle_logo.png';
+  static const String _loginHistoryStorageKey = 'user_login_history';
 
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final GoogleAuthService _googleAuthService = GoogleAuthService();
   final GetStorage _storage = GetStorage();
   StreamSubscription? _googleAuthSub;
+  List<String> _savedEmails = const <String>[];
 
   String get _authApiBaseUrl {
     if (kIsWeb ||
@@ -43,6 +45,7 @@ class _AuthPageState extends State<AuthPage> {
   @override
   void initState() {
     super.initState();
+    _loadLoginHistory();
     if (kIsWeb) {
       _googleAuthService.initialize().then((_) {
         _googleAuthSub = _googleAuthService.authenticationEvents.listen(
@@ -68,7 +71,37 @@ class _AuthPageState extends State<AuthPage> {
       });
     }
   }
+//  << 아이디 입력필드 (성공했던 이메일이 로컬에 저장) -04.04.hj-
+  void _loadLoginHistory() {
+    final List<dynamic>? storedEmails = _storage.read<List<dynamic>>(
+      _loginHistoryStorageKey,
+    );
+    _savedEmails = (storedEmails ?? <dynamic>[])
+        .map((dynamic item) => item.toString().trim())
+        .where((String item) => item.isNotEmpty)
+        .toList(growable: false);
+  }
 
+  Future<void> _saveSuccessfulEmail(String email) async {
+    final String trimmedEmail = email.trim();
+    if (trimmedEmail.isEmpty) {
+      return;
+    }
+
+    final List<String> nextEmails = <String>[
+      trimmedEmail,
+      ..._savedEmails.where((String item) => item != trimmedEmail),
+    ];
+    final List<String> limitedEmails = nextEmails.take(5).toList(growable: false);
+    await _storage.write(_loginHistoryStorageKey, limitedEmails);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _savedEmails = limitedEmails;
+    });
+  }
+//  아이디 입력필드 (성공했던 이메일이 로컬에 저장) -04.04.hj- >>
   @override
   void dispose() {
     _emailController.dispose();
@@ -126,6 +159,8 @@ class _AuthPageState extends State<AuthPage> {
           if (userId != null) {
             await _storage.write("user_id", userId);
           }
+        //  << 아이디 입력필드 (성공했던 이메일이 로컬에 저장) -04.04.hj-
+          await _saveSuccessfulEmail(_emailController.text.trim()); 
           if (!mounted) {
             return;
           }
@@ -191,6 +226,8 @@ class _AuthPageState extends State<AuthPage> {
           if (userId != null) {
             await _storage.write("user_id", userId);
           }
+          //  << 아이디 입력필드 (성공했던 이메일이 로컬에 저장) -04.04.hj-
+          await _saveSuccessfulEmail(account.email);
           final message = isSignUp ? "구글 가입 완료!" : "구글 로그인 완료!";
           if (!mounted) {
             return;
@@ -299,10 +336,11 @@ class _AuthPageState extends State<AuthPage> {
 
               SizedBox(height: sectionGap),
 
-              CustomTextField(
+              EmailHistoryTextField(
                 hint: "이메일 입력",
                 icon: Icons.email,
                 controller: _emailController,
+                suggestions: _savedEmails,
                 keyboardType: TextInputType.emailAddress,
                 textInputAction: TextInputAction.next,
               ),

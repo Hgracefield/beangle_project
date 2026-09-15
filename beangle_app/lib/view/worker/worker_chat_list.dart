@@ -145,7 +145,38 @@ class WorkerChatListPage extends StatelessWidget {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        trailing: const Icon(Icons.chevron_right),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (ChatService.unreadCountForRole(data, 'admin') >
+                                0) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: workerThemeColor.withValues(
+                                    alpha: 0.12,
+                                  ),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: Text(
+                                  ChatService.unreadCountForRole(data, 'admin') >
+                                          99
+                                      ? '99+'
+                                      : '${ChatService.unreadCountForRole(data, 'admin')}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: workerThemeColor,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                            ],
+                            const Icon(Icons.chevron_right),
+                          ],
+                        ),
                         onTap: () {
                           Get.to(
                             () => WorkerChatPage(
