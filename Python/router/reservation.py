@@ -4,6 +4,7 @@ from pydantic import BaseModel
 import pymysql
 import config
 from typing import List
+from datetime import datetime
 
 router = APIRouter()
 	
@@ -14,6 +15,19 @@ class ReservationModel(BaseModel):
     station_id: int
     time:str
     is_cancel: int
+
+def _normalize_time_string(raw_time: str) -> str:
+    cleaned = raw_time.strip()
+    if not cleaned:
+        raise ValueError('time is empty')
+
+    # Accept both "2026-04-03 12:30:00" and ISO strings such as
+    # "2026-04-03T12:30:00" or "...Z".
+    if cleaned.endswith('Z'):
+        cleaned = cleaned[:-1] + '+00:00'
+
+    parsed = datetime.fromisoformat(cleaned.replace(' ', 'T'))
+    return parsed.strftime('%Y-%m-%d %H:%M:%S')
 
 def connect():
     return pymysql.connect(
@@ -94,7 +108,8 @@ async def insert(data: List[ReservationModel]):
 
     for d in data:
         sql = 'INSERT INTO reservation(user_id, station_id, `time`, is_cancel) values(%s,%s,%s,%s)'
-        curs.execute(sql,[d.user_id, d.station_id, d.time, d.is_cancel])
+        normalized_time = _normalize_time_string(d.time)
+        curs.execute(sql,[d.user_id, d.station_id, normalized_time, d.is_cancel])
     conn.commit()
     returnValue = 1
 
@@ -119,7 +134,8 @@ async def insert(data: ReservationModel):
     curs = conn.cursor()
 
     sql = 'INSERT INTO reservation(user_id, station_id, `time`, is_cancel) values(%s,%s,%s,%s)'
-    curs.execute(sql,[data.user_id, data.station_id, data.time, data.is_cancel])
+    normalized_time = _normalize_time_string(data.time)
+    curs.execute(sql,[data.user_id, data.station_id, normalized_time, data.is_cancel])
     conn.commit()
 
     return {'result':1}
@@ -142,7 +158,8 @@ async def update(data: ReservationModel):
         curs = conn.cursor()
 
         sql = 'update reservation set station_id=%s, time=%s, is_cancel=%s where reservation_id=%s'
-        curs.execute(sql,[data.station_id, data.time, data.is_cancel,data.reservation_id])
+        normalized_time = _normalize_time_string(data.time)
+        curs.execute(sql,[data.station_id, normalized_time, data.is_cancel,data.reservation_id])
         conn.commit()
         return {'result':1}
     except Exception as err:

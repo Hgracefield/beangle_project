@@ -62,4 +62,34 @@ class WorkApi {
         jsonDecode(response.body) as Map<String, dynamic>;
     return json['result'] == 'OK' ? 1 : 0;
   }
+
+  Future<bool> createWorkRequest({
+    required int workerId,
+    required int stationId,
+    required DateTime worktime,
+    required String requestMessage,
+  }) async {
+    final uri = Uri.parse('$baseUrl/work/request');
+    final response = await _client.post(
+      uri,
+      headers: const <String, String>{
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(<String, dynamic>{
+        'worker_id': workerId,
+        'station_id': stationId,
+        'worktime': worktime.toIso8601String(),
+        'request_message': requestMessage,
+      }),
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception('Failed to create work request');
+    }
+
+    final Map<String, dynamic> json =
+        jsonDecode(response.body) as Map<String, dynamic>;
+    return json['result'] == 'OK';
+  }
 }

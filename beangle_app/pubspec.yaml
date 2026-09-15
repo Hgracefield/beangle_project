@@ -48,9 +48,9 @@ dependencies:
     # 앱 리소스 생성
     flutter_native_splash: ^2.4.7
 
-    # 보류
-    # google_maps_flutter: ^2.16.0
-    # table_calendar: ^3.2.0
+    # 지도 / 캘린더
+    google_maps_flutter: ^2.16.0
+    table_calendar: ^3.2.0
 
 dev_dependencies:
     flutter_test:

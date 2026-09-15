@@ -1,66 +1,34 @@
 import 'package:beangle_app/view/auth/custom_textfield.dart';
-import 'package:beangle_app/view/auth/google_auth_button.dart';
-import 'package:beangle_app/view/auth/google_auth_service.dart';
 import 'package:beangle_app/widgets/primaryButton.dart';
-import 'package:beangle_app/view/auth/auth_page.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:get_storage/get_storage.dart';
 
-class _PhoneNumberFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    final String digits = newValue.text.replaceAll(RegExp(r'\D'), '');
-    final String trimmed = digits.length > 11
-        ? digits.substring(0, 11)
-        : digits;
-
-    final StringBuffer buffer = StringBuffer();
-    for (int i = 0; i < trimmed.length; i++) {
-      if (i == 3 || i == 7) {
-        buffer.write('-');
-      }
-      buffer.write(trimmed[i]);
-    }
-
-    final String formatted = buffer.toString();
-    return TextEditingValue(
-      text: formatted,
-      selection: TextSelection.collapsed(offset: formatted.length),
-    );
-  }
-}
-
-class AuthSignPage extends StatefulWidget {
-  const AuthSignPage({super.key});
+class WorkerAuthSignPage extends StatefulWidget {
+  const WorkerAuthSignPage({super.key});
 
   @override
-  State<AuthSignPage> createState() => _AuthSignPageState();
+  State<WorkerAuthSignPage> createState() => _WorkerAuthSignPageState();
 }
 
-class _AuthSignPageState extends State<AuthSignPage> {
+class _WorkerAuthSignPageState extends State<WorkerAuthSignPage> {
   static const String _logoAssetPath = 'images/beangle_logo.png';
 
   final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _mailCodeController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _passwordConfirmController =
       TextEditingController();
-  final GoogleAuthService _googleAuthService = GoogleAuthService();
-  final GetStorage _storage = GetStorage();
-  final _PhoneNumberFormatter _phoneNumberFormatter = _PhoneNumberFormatter();
-  StreamSubscription? _googleAuthSub;
   bool _isSubmitting = false;
+  bool _isAuth = false;
+  bool _isMailSending = false;
+  bool _isMailVerifying = false;
+  bool _mailSent = false;
+  String? _verifiedEmail;
 
   String get _authApiBaseUrl {
     if (kIsWeb ||
@@ -74,46 +42,44 @@ class _AuthSignPageState extends State<AuthSignPage> {
   @override
   void initState() {
     super.initState();
-    if (kIsWeb) {
-      _googleAuthService.initialize().then((_) {
-        _googleAuthSub = _googleAuthService.authenticationEvents.listen(
-          (event) async {
-            if (!mounted) {
-              return;
-            }
-            if (event is! GoogleSignInAuthenticationEventSignIn) {
-              return;
-            }
-            final account = event.user;
-            await _sendGoogleAuthToServer(account);
-          },
-          onError: (_) {
-            if (!mounted) {
-              return;
-            }
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(SnackBar(content: Text("구글 가입에 실패했어요.")));
-          },
-        );
-      });
-    }
+    _emailController.addListener(_handleEmailChanged);
   }
 
   @override
   void dispose() {
     _nameController.dispose();
-    _phoneController.dispose();
     _emailController.dispose();
+    _mailCodeController.dispose();
     _passwordController.dispose();
     _passwordConfirmController.dispose();
-    _googleAuthSub?.cancel();
     super.dispose();
+  }
+
+  void _handleEmailChanged() {
+    if (!mounted) {
+      return;
+    }
+    final current = _emailController.text.trim();
+    if (_verifiedEmail != null && _verifiedEmail != current) {
+      setState(() {
+        _isAuth = false;
+        _mailSent = false;
+        _verifiedEmail = null;
+      });
+    }
+  }
+
+  String? _validateEmailOnly() {
+    final email = _emailController.text.trim();
+    final emailRegex = RegExp(r'^[^@\s]+@[^\s]+\.[^\s]+$');
+    if (!emailRegex.hasMatch(email)) {
+      return "이메일 형식을 확인해주세요.";
+    }
+    return null;
   }
 
   String? _validateInputs() {
     final name = _nameController.text.trim();
-    final phoneRaw = _phoneController.text.trim();
     final email = _emailController.text.trim();
     final password = _passwordController.text;
     final passwordConfirm = _passwordConfirmController.text;
@@ -121,12 +87,6 @@ class _AuthSignPageState extends State<AuthSignPage> {
     if (name.isEmpty) {
       return "이름을 입력해주세요.";
     }
-
-    final phoneDigits = phoneRaw.replaceAll(RegExp(r'\D'), '');
-    if (phoneDigits.length < 9) {
-      return "전화번호를 확인해주세요.";
-    }
-
     final emailRegex = RegExp(r'^[^@\s]+@[^\s]+\.[^\s]+$');
     if (!emailRegex.hasMatch(email)) {
       return "이메일 형식을 확인해주세요.";
@@ -160,11 +120,18 @@ class _AuthSignPageState extends State<AuthSignPage> {
       return;
     }
 
+    final verifiedEmail = _verifiedEmail;
+    if (!_isAuth || verifiedEmail == null || verifiedEmail != _emailController.text.trim()) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("메일 인증을 완료해주세요.")));
+      return;
+    }
+
     final payload = {
-      "email": _emailController.text.trim(),
-      "password": _passwordController.text,
-      "phone": _phoneController.text.trim(),
-      "name": _nameController.text.trim(),
+      "worker_email": _emailController.text.trim(),
+      "worker_password": _passwordController.text,
+      "worker_name": _nameController.text.trim(),
     };
 
     setState(() {
@@ -173,7 +140,7 @@ class _AuthSignPageState extends State<AuthSignPage> {
 
     try {
       final response = await http.post(
-        Uri.parse("$_authApiBaseUrl/auth/signup"),
+        Uri.parse("$_authApiBaseUrl/worker/insert"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode(payload),
       );
@@ -184,9 +151,9 @@ class _AuthSignPageState extends State<AuthSignPage> {
 
       if (response.statusCode == 200) {
         final dynamic body = jsonDecode(response.body);
-        final bool success =
-            body is Map<String, dynamic> && body["success"] == true;
-        if (success) {
+        final String result =
+            body is Map<String, dynamic> ? body["result"]?.toString() ?? "" : "";
+        if (result == "OK") {
           ScaffoldMessenger.of(
             context,
           ).showSnackBar(const SnackBar(content: Text("회원가입이 완료됐어요.")));
@@ -196,12 +163,8 @@ class _AuthSignPageState extends State<AuthSignPage> {
           }
           Get.back();
         } else {
-          final String error = body is Map<String, dynamic>
-              ? body["error"]?.toString() ?? ""
-              : "";
-          final String message = error == "email_already_exists"
-              ? "이미 가입된 이메일입니다."
-              : "회원가입에 실패했어요.";
+          final String message =
+              result == "EMAIL_NOT_VERIFIED" ? "메일 인증을 완료해주세요." : "회원가입에 실패했어요.";
           ScaffoldMessenger.of(
             context,
           ).showSnackBar(SnackBar(content: Text(message)));
@@ -227,55 +190,97 @@ class _AuthSignPageState extends State<AuthSignPage> {
     }
   }
 
-  Future<void> _sendGoogleAuthToServer(GoogleSignInAccount account) async {
-    final idToken = await _googleAuthService.getIdToken(account);
-    if (!mounted) {
+  Future<void> _onMailAuth() async {
+    if (_isMailSending || _isMailVerifying) {
       return;
     }
-    if (idToken == null) {
+
+    final errorMessage = _validateEmailOnly();
+    if (errorMessage != null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text("구글 토큰을 가져올 수 없어요.")));
+      ).showSnackBar(SnackBar(content: Text(errorMessage)));
       return;
     }
 
-    final payload = {
-      "email": account.email,
-      "name": account.displayName ?? "",
-      "idToken": idToken,
-    };
+    setState(() {
+      _isMailSending = true;
+    });
 
     try {
-      final response = await http.post(
-        Uri.parse("$_authApiBaseUrl/auth/google_login"),
+      final email = _emailController.text.trim();
+      final Uri existUri = Uri.parse("$_authApiBaseUrl/worker/exist")
+          .replace(queryParameters: {"email": email});
+      final existResponse = await http.get(
+        existUri,
         headers: {"Content-Type": "application/json"},
-        body: jsonEncode(payload),
+      );
+
+      print(existUri);
+
+      if (!mounted) {
+        return;
+      }
+
+      if (existResponse.statusCode != 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("메일 확인에 실패했어요. (${existResponse.statusCode})")),
+        );
+        return;
+      }
+
+      final dynamic existBody = jsonDecode(existResponse.body);
+      final dynamic existResult =
+          existBody is Map<String, dynamic> ? existBody["result"] : null;
+      if (existResult == "Error") {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("메일 확인에 실패했어요.")));
+        return;
+      }
+
+      final int existCount =
+          existResult is int ? existResult : int.tryParse(existResult?.toString() ?? "") ?? 0;
+      if (existCount > 0) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("이미 가입된 이메일입니다.")));
+        return;
+      }
+
+      final sendResponse = await http.post(
+        Uri.parse("$_authApiBaseUrl/worker/mail-auth/send"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"worker_email": email}),
       );
 
       if (!mounted) {
         return;
       }
 
-      if (response.statusCode == 200) {
-        final body = jsonDecode(response.body);
-        final success = body is Map<String, dynamic> && body["success"] == true;
-        if (success) {
-          final userId = body["user_id"];
-          if (userId != null) {
-            await _storage.write("user_id", userId);
-          }
-          if (!mounted) {
-            return;
-          }
-          Get.snackbar('Success', '구글 계정으로 가입됐어요.');
-          Get.off(() => const AuthPage());
-          return;
+      if (sendResponse.statusCode == 200) {
+        final dynamic sendBody = jsonDecode(sendResponse.body);
+        final String result =
+            sendBody is Map<String, dynamic> ? sendBody["result"]?.toString() ?? "" : "";
+        if (result == "OK") {
+          setState(() {
+            _mailSent = true;
+            _isAuth = false;
+            _verifiedEmail = null;
+          });
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text("인증 메일을 전송했어요.")));
+        } else {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text("메일 전송에 실패했어요.")));
         }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("메일 전송에 실패했어요. (${sendResponse.statusCode})")),
+        );
       }
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("구글 가입에 실패했어요.")));
     } catch (_) {
       if (!mounted) {
         return;
@@ -283,31 +288,99 @@ class _AuthSignPageState extends State<AuthSignPage> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text("서버에 연결할 수 없어요.")));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isMailSending = false;
+        });
+      }
     }
   }
 
-  Future<void> _onGoogleSignUpPressed() async {
+  Future<void> _onVerifyMailCode() async {
+    if (_isMailVerifying || _isMailSending) {
+      return;
+    }
+
+    final errorMessage = _validateEmailOnly();
+    if (errorMessage != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(errorMessage)));
+      return;
+    }
+
+    final code = _mailCodeController.text.trim();
+    if (code.length != 6) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("인증번호 6자리를 입력해주세요.")));
+      return;
+    }
+
+    setState(() {
+      _isMailVerifying = true;
+    });
+
     try {
-      final account = await _googleAuthService.signIn();
+      final email = _emailController.text.trim();
+      final response = await http.post(
+        Uri.parse("$_authApiBaseUrl/worker/mail-auth/verify"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"worker_email": email, "code": code}),
+      );
+
       if (!mounted) {
         return;
       }
 
-      if (account == null) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("가입이 취소됐어요.")));
-        return;
+      if (response.statusCode == 200) {
+        final dynamic body = jsonDecode(response.body);
+        final String result =
+            body is Map<String, dynamic> ? body["result"]?.toString() ?? "" : "";
+        if (result == "OK") {
+          setState(() {
+            _isAuth = true;
+            _verifiedEmail = email;
+          });
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text("메일 인증이 완료됐어요.")));
+        } else if (result == "EXPIRED") {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text("인증번호가 만료됐어요. 다시 요청해주세요.")));
+        } else if (result == "INVALID") {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text("인증번호가 올바르지 않아요.")));
+        } else if (result == "NOT_FOUND") {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text("인증 요청 내역이 없어요.")));
+        } else {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text("메일 인증에 실패했어요.")));
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("메일 인증에 실패했어요. (${response.statusCode})")),
+        );
       }
-
-      await _sendGoogleAuthToServer(account);
     } catch (_) {
       if (!mounted) {
         return;
       }
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text("구글 가입에 실패했어요.")));
+      ).showSnackBar(SnackBar(content: Text("서버에 연결할 수 없어요.")));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isMailVerifying = false;
+        });
+      }
     }
   }
 
@@ -511,22 +584,49 @@ class _AuthSignPageState extends State<AuthSignPage> {
             textInputAction: TextInputAction.next,
           ),
           SizedBox(height: fieldGap),
-          CustomTextField(
-            hint: "010-0000-0000",
-            icon: Icons.phone,
-            controller: _phoneController,
-            keyboardType: TextInputType.phone,
-            textInputAction: TextInputAction.next,
-            inputFormatters: <TextInputFormatter>[_phoneNumberFormatter],
+          Row(
+            children: [
+              Expanded(
+                child: CustomTextField(
+                  hint: "이메일 입력",
+                  icon: Icons.email,
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  textInputAction: TextInputAction.next,
+                ),
+              ),
+              SizedBox(width: fieldGap),
+              Expanded(
+                child: PrimaryButton(
+                  text: _isAuth ? "인증 완료" : "메일 인증",
+                  onPressed: _isAuth || _isMailSending ? () {} : _onMailAuth,
+                ),
+              ),
+            ],
           ),
-          SizedBox(height: fieldGap),
-          CustomTextField(
-            hint: "이메일 입력",
-            icon: Icons.email,
-            controller: _emailController,
-            keyboardType: TextInputType.emailAddress,
-            textInputAction: TextInputAction.next,
-          ),
+          if (_mailSent && !_isAuth) ...[
+            SizedBox(height: fieldGap),
+            Row(
+              children: [
+                Expanded(
+                  child: CustomTextField(
+                    hint: "인증번호 6자리 입력",
+                    icon: Icons.verified_outlined,
+                    controller: _mailCodeController,
+                    keyboardType: TextInputType.number,
+                    textInputAction: TextInputAction.done,
+                  ),
+                ),
+                SizedBox(width: fieldGap),
+                Expanded(
+                  child: PrimaryButton(
+                    text: _isMailVerifying ? "확인 중..." : "인증 확인",
+                    onPressed: _isMailVerifying ? () {} : _onVerifyMailCode,
+                  ),
+                ),
+              ],
+            ),
+          ],
           SizedBox(height: fieldGap),
           CustomTextField(
             hint: "비밀번호 입력",
@@ -543,58 +643,41 @@ class _AuthSignPageState extends State<AuthSignPage> {
             controller: _passwordConfirmController,
             textInputAction: TextInputAction.done,
           ),
-          const SizedBox(height: 18),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF3F7EF),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  '가입 안내',
-                  style: TextStyle(
-                    color: Color(0xFF1F3516),
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                SizedBox(height: 8),
-                Text(
-                  '전화번호는 숫자만 입력해도 자동으로 하이픈이 들어갑니다.',
-                  style: TextStyle(color: Color(0xFF5E7353), height: 1.45),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  '비밀번호는 6자 이상, 영문과 숫자를 함께 입력해주세요.',
-                  style: TextStyle(color: Color(0xFF5E7353), height: 1.45),
-                ),
-              ],
-            ),
-          ),
+          // const SizedBox(height: 18),
+          // Container(
+          //   width: double.infinity,
+          //   padding: const EdgeInsets.all(16),
+          //   decoration: BoxDecoration(
+          //     color: const Color(0xFFF3F7EF),
+          //     borderRadius: BorderRadius.circular(16),
+          //   ),
+          //   child: const Column(
+          //     crossAxisAlignment: CrossAxisAlignment.start,
+          //     children: <Widget>[
+          //       Text(
+          //         '가입 안내',
+          //         style: TextStyle(
+          //           color: Color(0xFF1F3516),
+          //           fontWeight: FontWeight.w700,
+          //         ),
+          //       ),
+          //       SizedBox(height: 8),
+          //       Text(
+          //         '전화번호는 숫자만 입력해도 자동으로 하이픈이 들어갑니다.',
+          //         style: TextStyle(color: Color(0xFF5E7353), height: 1.45),
+          //       ),
+          //       SizedBox(height: 4),
+          //       Text(
+          //         '비밀번호는 6자 이상, 영문과 숫자를 함께 입력해주세요.',
+          //         style: TextStyle(color: Color(0xFF5E7353), height: 1.45),
+          //       ),
+          //     ],
+          //   ),
+          // ),
           SizedBox(height: sectionGap),
           PrimaryButton(
             text: _isSubmitting ? "가입 처리 중..." : "회원가입",
             onPressed: _isSubmitting ? () {} : _onSignUpPressed,
-          ),
-          SizedBox(height: fieldGap),
-          const Center(child: Text("또는")),
-          SizedBox(height: fieldGap),
-          GoogleAuthButton(
-            onPressed: _isSubmitting ? () {} : _onGoogleSignUpPressed,
-            label: "Google로 가입",
-          ),
-          SizedBox(height: fieldGap),
-          Align(
-            alignment: Alignment.center,
-            child: TextButton(
-              onPressed: () {
-                Get.back();
-              },
-              child: const Text("이미 계정이 있나요? 로그인"),
-            ),
           ),
         ],
       ),

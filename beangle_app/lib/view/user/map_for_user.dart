@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:beangle_app/view/auth/auth_page.dart';
 import 'package:beangle_app/model/reservation_api.dart';
 import 'package:beangle_app/model/reservation_info.dart';
+import 'package:beangle_app/view/user/user_chat_page.dart';
 import 'package:beangle_app/view/user/reservation.dart';
 import 'package:beangle_app/view/user/user_profile_page.dart';
 import 'package:flutter/foundation.dart';
@@ -321,6 +322,24 @@ class _MapForUserPageState extends State<MapForUserPage> {
         _userInfoStatus = '고객 정보를 불러올 수 없습니다';
       });
     }
+  }
+
+  void _openAdminChat() {
+    final String? userId = _userId;
+    if (userId == null || userId.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('로그인 후 채팅을 사용할 수 있습니다.')));
+      return;
+    }
+
+    Get.to(
+      () => UserChatPage(
+        userId: userId,
+        userName: _userName,
+        userEmail: _userEmail,
+      ),
+    );
   }
 
   Future<void> _getCurrentLocation() async {
@@ -1615,6 +1634,17 @@ class _MapForUserPageState extends State<MapForUserPage> {
                 onTap: () {
                   Navigator.of(context).pop();
                   _showReservationList();
+                },
+              ),
+              ListTile(
+                leading: Icon(
+                  Icons.chat_bubble_outline,
+                  color: _primaryTextColor,
+                ),
+                title: Text('채팅하기', style: TextStyle(color: _primaryTextColor)),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _openAdminChat();
                 },
               ),
               ListTile(
